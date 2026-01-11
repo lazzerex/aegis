@@ -1,0 +1,41 @@
+# Build outputs
+bin/
+target/
+
+# Generated files
+control-plane/proto/*.pb.go
+control-plane/proto/*.go
+!control-plane/proto/go.mod
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+
+# Rust
+data-plane/target/
+Cargo.lock
+**/*.rs.bk
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+
+# Dependencies
+vendor/
+node_modules/
