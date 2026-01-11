@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package proxy;
+
+option go_package = "github.com/lazzerex/aegis/control-plane/proto";
+
+// ProxyControl service handles communication between Go control plane and Rust data plane
+service ProxyControl {
+  // Push configuration updates from Go → Rust
+  rpc UpdateConfig(ProxyConfig) returns (ConfigAck);
+  
+  // Stream metrics from Rust → Go
+  rpc StreamMetrics(stream MetricsData) returns (stream MetricsAck);
+  
+  // Control commands
+  rpc DrainConnections(DrainRequest) returns (DrainResponse);
+  rpc ReloadBackends(BackendList) returns (ReloadAck);
+}
+
+// Configuration messages
+message ProxyConfig {
+  ListenConfig listen = 1;
+  repeated Backend backends = 2;
+  LoadBalancingConfig load_balancing = 3;
+  TrafficConfig traffic = 4;
+  CircuitBreakerConfig circuit_breaker = 5;
+}
+
+message ListenConfig {
+  string tcp_address = 1;
+  string udp_address = 2;
+}
+
+message Backend {
+  string address = 1;
+  int32 weight = 2;
+  bool healthy = 3;
+  HealthCheckConfig health_check = 4;
+}
+
+message HealthCheckConfig {
+  int32 interval_seconds = 1;
+  int32 timeout_seconds = 2;
+  string path = 3;
+}
+
+message LoadBalancingConfig {
+  string algorithm = 1;  // round_robin, least_connections, weighted, consistent_hash
+  bool session_affinity = 2;
+}
+
+message TrafficConfig {
+  RateLimitConfig rate_limit = 1;
+  TimeoutConfig timeout = 2;
+}
+
+message RateLimitConfig {
+  int32 requests_per_second = 1;
+  int32 burst = 2;
+}
+
+message TimeoutConfig {
+  int32 connect_seconds = 1;
+  int32 idle_seconds = 2;
+  int32 read_seconds = 3;
+}
+
+message CircuitBreakerConfig {
+  int32 error_threshold = 1;
+  int32 timeout_seconds = 2;
+}
+
+// Response messages
+message ConfigAck {
+  bool success = 1;
+  string message = 2;
+}
+
+message ReloadAck {
+  bool success = 1;
+  string message = 2;
+  int32 backends_loaded = 3;
+}
+
+// Backend list for reload
+message BackendList {
+  repeated Backend backends = 1;
+}
+
+// Drain connections
+message DrainRequest {
+  int32 timeout_seconds = 1;
+}
+
+message DrainResponse {
+  bool success = 1;
+  int32 connections_drained = 2;
+}
+
+// Metrics messages
+message MetricsData {
+  int64 active_connections = 1;
+  int64 total_connections = 2;
+  int64 bytes_sent = 3;
+  int64 bytes_received = 4;
+  double avg_latency_ms = 5;
+  double p99_latency_ms = 6;
+  repeated BackendMetrics backend_metrics = 7;
+  int64 timestamp = 8;
+}
+
+message BackendMetrics {
+  string address = 1;
+  int64 active_connections = 2;
+  int64 total_requests = 3;
+  int64 failed_requests = 4;
+  double avg_latency_ms = 5;
+}
+
+message MetricsAck {
+  bool received = 1;
+}
