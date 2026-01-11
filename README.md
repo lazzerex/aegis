@@ -4,7 +4,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-blue)](https://golang.org)
 [![Rust Version](https://img.shields.io/badge/Rust-1.75%2B-orange)](https://www.rust-lang.org)
 
-Aegis is a high-performance network proxy that combines Go's control plane with Rust's data plane for optimal performance and maintainability.
+Aegis is an in-development high-performance network proxy that combines Go's control plane with Rust's data plane for optimal performance and maintainability.
 
 The control plane handles configuration, health checks, and load balancing logic in Go, while the data plane processes packets in Rust for minimal latency overhead. The two communicate via gRPC, allowing independent development and deployment of each component.
 
