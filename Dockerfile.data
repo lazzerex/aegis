@@ -1,0 +1,30 @@
+FROM rust:1.75-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache musl-dev protobuf protobuf-dev
+
+# Copy cargo files
+COPY data-plane/Cargo.toml data-plane/Cargo.lock ./
+COPY data-plane/build.rs ./
+
+# Copy source
+COPY data-plane/src ./src
+COPY proto/ ./proto/
+
+# Build
+RUN cargo build --release
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+COPY --from=builder /app/target/release/aegis-data .
+
+EXPOSE 50051 8080 8081
+
+ENTRYPOINT ["./aegis-data"]

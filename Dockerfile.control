@@ -1,0 +1,30 @@
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache git protobuf protobuf-dev
+
+# Copy go mod files
+COPY control-plane/go.mod control-plane/go.sum ./
+RUN go mod download
+
+# Copy source
+COPY control-plane/ ./
+COPY proto/ ./proto/
+
+# Build
+RUN go build -o aegis-control ./cmd/main.go
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+COPY --from=builder /app/aegis-control .
+
+EXPOSE 9090 9091
+
+ENTRYPOINT ["./aegis-control"]
