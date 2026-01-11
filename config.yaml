@@ -1,0 +1,48 @@
+proxy:
+  listen:
+    tcp: "0.0.0.0:8080"
+    udp: "0.0.0.0:8081"
+  
+  backends:
+    - address: "localhost:3000"
+      weight: 100
+      health_check:
+        interval: 5s
+        timeout: 2s
+        path: "/health"
+    - address: "localhost:3001"
+      weight: 100
+      health_check:
+        interval: 5s
+        timeout: 2s
+        path: "/health"
+    - address: "localhost:3002"
+      weight: 50
+      health_check:
+        interval: 5s
+        timeout: 2s
+        path: "/health"
+
+  load_balancing:
+    algorithm: "round_robin"  # round_robin, weighted, least_connections
+    session_affinity: false
+
+  traffic:
+    rate_limit:
+      requests_per_second: 1000
+      burst: 100
+    timeout:
+      connect: 5s
+      idle: 60s
+      read: 30s
+
+  circuit_breaker:
+    error_threshold: 5
+    timeout: 30s
+
+admin:
+  api_address: "127.0.0.1:9090"
+  metrics_address: "0.0.0.0:9091"
+
+grpc:
+  control_plane_address: "127.0.0.1:50051"
