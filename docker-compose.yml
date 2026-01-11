@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # Backend services (NestJS or any HTTP service)
+  backend1:
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run start:dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - PORT=3000
+      - SERVICE_NAME=backend1
+
+  backend2:
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run start:dev"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+    environment:
+      - PORT=3001
+      - SERVICE_NAME=backend2
+
+  backend3:
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run start:dev"
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./backend:/app
+    environment:
+      - PORT=3002
+      - SERVICE_NAME=backend3
+
+  # Rust data plane
+  data-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile.data
+    environment:
+      - RUST_LOG=info
+    ports:
+      - "50051:50051"  # gRPC
+    depends_on:
+      - backend1
+      - backend2
+      - backend3
+
+  # Go control plane
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile.control
+    ports:
+      - "9090:9090"   # Admin API
+      - "9091:9091"   # Metrics
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - data-plane
+    command: ["--config", "/app/config.yaml"]
+
+  # Proxy entry point
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.data
+    ports:
+      - "8080:8080"   # TCP Proxy
+      - "8081:8081"   # UDP Proxy
+    depends_on:
+      - control-plane
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9092:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+
+volumes:
+  grafana-storage:
