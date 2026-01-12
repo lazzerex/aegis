@@ -89,6 +89,16 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
                 .and_then(|t| t.timeout.as_ref())
                 .map(|to| to.read_seconds)
                 .unwrap_or(30),
+            circuit_breaker_threshold: pb_config
+                .circuit_breaker
+                .as_ref()
+                .map(|cb| cb.error_threshold as u32)
+                .unwrap_or(5),
+            circuit_breaker_timeout_secs: pb_config
+                .circuit_breaker
+                .as_ref()
+                .map(|cb| cb.timeout_seconds as u32)
+                .unwrap_or(30),
         };
 
         info!(
