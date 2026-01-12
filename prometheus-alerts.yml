@@ -1,0 +1,73 @@
+groups:
+  - name: aegis_proxy
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighProxyErrorRate
+        expr: rate(proxy_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High proxy error rate detected"
+          description: "Proxy error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+
+      # Circuit breaker open
+      - alert: CircuitBreakerOpen
+        expr: proxy_circuit_breaker_state > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.backend }}"
+          description: "Circuit breaker has been open for more than 2 minutes for backend {{ $labels.backend }}"
+
+      # High rate limit rejections
+      - alert: HighRateLimitRejections
+        expr: rate(proxy_rate_limit_rejected_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High rate limit rejections"
+          description: "Rate limiter is rejecting {{ $value }} requests/sec"
+
+      # Backend unhealthy
+      - alert: BackendUnhealthy
+        expr: proxy_backend_healthy == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend {{ $labels.backend }} is unhealthy"
+          description: "Backend {{ $labels.backend }} has been unhealthy for more than 1 minute"
+
+      # High connection count
+      - alert: HighConnectionCount
+        expr: proxy_active_connections > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active connections"
+          description: "Proxy has {{ $value }} active connections"
+
+      # UDP session count warning
+      - alert: HighUDPSessionCount
+        expr: proxy_udp_active_sessions > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of UDP sessions"
+          description: "UDP proxy has {{ $value }} active sessions"
+
+      # Proxy not responding
+      - alert: ProxyDown
+        expr: up{job="aegis-control-plane"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aegis proxy is down"
+          description: "Aegis control plane has been down for more than 1 minute"
