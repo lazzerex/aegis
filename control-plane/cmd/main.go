@@ -72,7 +72,7 @@ func main() {
 
 	// Initialize REST API
 	apiServer := api.NewServer(cfg, grpcClient, healthChecker, logger)
-	
+
 	// Start API server
 	go func() {
 		logger.Info("Starting admin API", zap.String("address", cfg.Admin.APIAddress))

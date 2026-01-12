@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot::RwLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::config::Backend;
 
@@ -20,9 +20,7 @@ impl LoadBalancer {
 
     pub fn select_backend(&self) -> Option<Backend> {
         let backends = self.backends.read();
-        let healthy: Vec<_> = backends.iter()
-            .filter(|b| b.healthy)
-            .collect();
+        let healthy: Vec<_> = backends.iter().filter(|b| b.healthy).collect();
 
         if healthy.is_empty() {
             return None;

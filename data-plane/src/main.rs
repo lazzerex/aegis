@@ -1,15 +1,15 @@
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{info, error};
+use tracing::{error, info};
 use tracing_subscriber;
 
 mod config;
+mod connection;
 mod grpc_server;
-mod tcp_proxy;
-mod udp_proxy;
 mod load_balancer;
 mod metrics;
-mod connection;
+mod tcp_proxy;
+mod udp_proxy;
 
 use config::ProxyState;
 use grpc_server::ProxyControlService;
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -32,9 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start gRPC server
     let grpc_addr = "127.0.0.1:50051".parse()?;
     let grpc_service = ProxyControlService::new(proxy_state.clone());
-    
+
     info!("Starting gRPC control server on {}", grpc_addr);
-    
+
     let grpc_handle = tokio::spawn(async move {
         if let Err(e) = tonic::transport::Server::builder()
             .add_service(grpc_service.into_service())
@@ -84,12 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     proxy_state.drain_connections().await;
 
     // Wait for all tasks to complete (with timeout)
-    let _ = tokio::time::timeout(
-        tokio::time::Duration::from_secs(30),
-        async {
-            let _ = tokio::join!(grpc_handle, tcp_handle, udp_handle, metrics_handle);
-        }
-    ).await;
+    let _ = tokio::time::timeout(tokio::time::Duration::from_secs(30), async {
+        let _ = tokio::join!(grpc_handle, tcp_handle, udp_handle, metrics_handle);
+    })
+    .await;
 
     info!("Shutdown complete");
     Ok(())

@@ -10,11 +10,8 @@ pub async fn stream_metrics(state: Arc<ProxyState>) {
         interval.tick().await;
 
         let active_connections = state.active_connection_count() as i64;
-        
-        debug!(
-            "Metrics: active_connections={}",
-            active_connections
-        );
+
+        debug!("Metrics: active_connections={}", active_connections);
 
         // In a real implementation, we would:
         // 1. Collect detailed metrics (bytes sent/received, latency, etc.)

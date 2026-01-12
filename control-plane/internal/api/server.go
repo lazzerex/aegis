@@ -61,7 +61,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthState := s.healthChecker.GetHealthState()
-	
+
 	response := map[string]interface{}{
 		"status":   "ok",
 		"backends": healthState,
@@ -75,7 +75,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"version": "0.1.0",
 		"config": map[string]interface{}{
-			"backends": len(s.config.Proxy.Backends),
+			"backends":  len(s.config.Proxy.Backends),
 			"algorithm": s.config.Proxy.LoadBalancing.Algorithm,
 		},
 	}

@@ -96,7 +96,7 @@ func (c *Checker) performHealthCheck(client *http.Client, backend config.Backend
 	defer resp.Body.Close()
 
 	healthy := resp.StatusCode >= 200 && resp.StatusCode < 300
-	
+
 	if !healthy {
 		c.logger.Warn("Backend unhealthy",
 			zap.String("backend", backend.Address),

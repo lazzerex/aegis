@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use tokio::net::UdpSocket;
-use tracing::{info, error, debug};
 use dashmap::DashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::net::UdpSocket;
+use tracing::{debug, error, info};
 
 use crate::config::ProxyState;
 use crate::load_balancer::LoadBalancer;
@@ -16,8 +16,7 @@ struct UdpSession {
 }
 
 pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error>> {
-    let config = state.get_config()
-        .ok_or("Proxy not configured")?;
+    let config = state.get_config().ok_or("Proxy not configured")?;
 
     if config.udp_address.is_empty() {
         info!("UDP proxy disabled (no address configured)");
@@ -27,7 +26,10 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
     let socket = Arc::new(UdpSocket::bind(&config.udp_address).await?);
     info!("UDP proxy listening on {}", config.udp_address);
 
-    let load_balancer = Arc::new(LoadBalancer::new(config.backends.clone(), config.algorithm.clone()));
+    let load_balancer = Arc::new(LoadBalancer::new(
+        config.backends.clone(),
+        config.algorithm.clone(),
+    ));
     let sessions: Arc<DashMap<String, UdpSession>> = Arc::new(DashMap::new());
 
     // Session cleanup task
@@ -35,11 +37,9 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
-            
+
             // Remove expired sessions
-            sessions_clone.retain(|_, session| {
-                session.last_activity.elapsed() < SESSION_TIMEOUT
-            });
+            sessions_clone.retain(|_, session| session.last_activity.elapsed() < SESSION_TIMEOUT);
         }
     });
 
@@ -68,11 +68,12 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
         // Get or create session
         let backend_addr = {
             let mut session = sessions.entry(client_key.clone()).or_insert_with(|| {
-                let backend = load_balancer.select_backend()
+                let backend = load_balancer
+                    .select_backend()
                     .expect("No healthy backends available");
-                
+
                 debug!("New UDP session {} -> {}", client_addr, backend.address);
-                
+
                 UdpSession {
                     backend_addr: backend.address.clone(),
                     last_activity: Instant::now(),

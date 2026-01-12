@@ -9,9 +9,9 @@ import (
 )
 
 type Config struct {
-	Proxy  ProxyConfig  `yaml:"proxy"`
-	Admin  AdminConfig  `yaml:"admin"`
-	GRPC   GRPCConfig   `yaml:"grpc"`
+	Proxy ProxyConfig `yaml:"proxy"`
+	Admin AdminConfig `yaml:"admin"`
+	GRPC  GRPCConfig  `yaml:"grpc"`
 }
 
 type ProxyConfig struct {
