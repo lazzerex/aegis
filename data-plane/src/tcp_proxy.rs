@@ -56,6 +56,18 @@ async fn handle_connection(
     load_balancer: Arc<LoadBalancer>,
     config: crate::config::ProxyConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Get client address for rate limiting and logging
+    let client_addr = client.peer_addr()?;
+
+    // Check rate limit
+    if !state
+        .rate_limiter
+        .allow_request(Some(&client_addr.to_string()))
+    {
+        warn!("Rate limit exceeded for client: {}", client_addr);
+        return Err("Rate limit exceeded".into());
+    }
+
     // Register connection
     let (conn_id, _token) = state.register_connection();
 
@@ -65,21 +77,53 @@ async fn handle_connection(
         conn_id,
     };
 
-    // Select backend
+    // Select backend with consistent hashing support
     let backend = load_balancer
-        .select_backend()
+        .select_backend_with_context(Some(&client_addr.ip().to_string()))
         .ok_or("No healthy backends available")?;
+
+    // Check circuit breaker
+    if !state.circuit_breaker.allow_request(&backend.address) {
+        warn!(
+            "Circuit breaker open for backend: {}, rejecting request",
+            backend.address
+        );
+        return Err("Circuit breaker open".into());
+    }
 
     debug!("Forwarding to backend: {}", backend.address);
 
+    // Track connection in load balancer
+    load_balancer.increment_connections(&backend.address);
+    let lb_guard = LoadBalancerGuard {
+        load_balancer: load_balancer.clone(),
+        backend_addr: backend.address.clone(),
+    };
+
     // Connect to backend with timeout
-    let mut backend_stream = tokio::time::timeout(
+    let backend_result = tokio::time::timeout(
         tokio::time::Duration::from_secs(config.connect_timeout_secs as u64),
         TcpStream::connect(&backend.address),
     )
-    .await??;
+    .await;
 
-    debug!("Connected to backend {}", backend.address);
+    let mut backend_stream = match backend_result {
+        Ok(Ok(stream)) => {
+            debug!("Connected to backend {}", backend.address);
+            state.circuit_breaker.record_success(&backend.address);
+            stream
+        }
+        Ok(Err(e)) => {
+            error!("Failed to connect to backend {}: {}", backend.address, e);
+            state.circuit_breaker.record_failure(&backend.address);
+            return Err(e.into());
+        }
+        Err(_) => {
+            error!("Timeout connecting to backend {}", backend.address);
+            state.circuit_breaker.record_failure(&backend.address);
+            return Err("Connection timeout".into());
+        }
+    };
 
     // Split streams for bidirectional copying
     let (mut client_read, mut client_write) = client.split();
@@ -117,17 +161,36 @@ async fn handle_connection(
         result = client_to_backend => {
             if let Err(e) = result {
                 warn!("Client to backend error: {}", e);
+                state.circuit_breaker.record_failure(&backend.address);
             }
         }
         result = backend_to_client => {
             if let Err(e) = result {
                 warn!("Backend to client error: {}", e);
+                state.circuit_breaker.record_failure(&backend.address);
             }
         }
     }
 
+    // Connection completed successfully
+    state.circuit_breaker.record_success(&backend.address);
     debug!("Connection closed");
+
+    // Drop the load balancer guard to decrement connection count
+    drop(lb_guard);
+
     Ok(())
+}
+
+struct LoadBalancerGuard {
+    load_balancer: Arc<LoadBalancer>,
+    backend_addr: String,
+}
+
+impl Drop for LoadBalancerGuard {
+    fn drop(&mut self) {
+        self.load_balancer.decrement_connections(&self.backend_addr);
+    }
 }
 
 struct ConnectionGuard {
