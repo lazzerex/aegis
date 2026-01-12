@@ -51,6 +51,23 @@ test:
 	cd control-plane && go test ./...
 	cd data-plane && cargo test
 
+# Test scripts
+test-proxy:
+	@./scripts/test-proxy.sh test-proxy
+
+test-advanced:
+	@./scripts/test-advanced-features.sh
+
+# Start/stop test backends
+backends-start:
+	@./scripts/test-proxy.sh start
+
+backends-stop:
+	@./scripts/test-proxy.sh stop
+
+backends-status:
+	@./scripts/test-proxy.sh status
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
