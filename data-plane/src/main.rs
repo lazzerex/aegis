@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proxy_state = Arc::new(ProxyState::new());
 
     // Start gRPC server
-    let grpc_addr = "127.0.0.1:50051".parse()?;
+    let grpc_addr = "0.0.0.0:50051".parse()?;
     let grpc_service = ProxyControlService::new(proxy_state.clone());
 
     info!("Starting gRPC control server on {}", grpc_addr);
