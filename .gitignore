@@ -43,3 +43,12 @@ Cargo.lock
 # Dependencies
 vendor/
 node_modules/
+
+# Docker
+.docker/
+docker-compose.override.yml
+grafana-storage/
+
+# Environment files
+.env
+.env.local
