@@ -24,8 +24,8 @@ proxy:
         path: "/health"
 
   load_balancing:
-    algorithm: "round_robin"  # round_robin, weighted, least_connections
-    session_affinity: false
+    algorithm: "round_robin"  # Options: round_robin, weighted_round_robin, least_connections, consistent_hash
+    session_affinity: true
 
   traffic:
     rate_limit:
