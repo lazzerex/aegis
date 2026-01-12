@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use parking_lot::RwLock;
 use dashmap::DashMap;
+use parking_lot::RwLock;
+use std::sync::Arc;
 use tokio::sync::Notify;
 
 pub mod proxy {
@@ -89,10 +89,14 @@ impl ProxyState {
 
     pub async fn drain_connections(&self) {
         *self.draining.lock() = true;
-        
+
         // Wait for all active connections to finish
         while self.active_connection_count() > 0 {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
+    }
+
+    pub fn reset_draining(&self) {
+        *self.draining.lock() = false;
     }
 }
