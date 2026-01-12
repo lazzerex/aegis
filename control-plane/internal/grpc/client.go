@@ -101,12 +101,23 @@ func (c *Client) UpdateConfig(cfg *config.Config) error {
 }
 
 func (c *Client) ReloadBackends(backends []config.Backend) error {
+	return c.ReloadBackendsWithHealth(backends, nil)
+}
+
+func (c *Client) ReloadBackendsWithHealth(backends []config.Backend, healthState map[string]bool) error {
 	pbBackends := make([]*pb.Backend, len(backends))
 	for i, backend := range backends {
+		healthy := true
+		if healthState != nil {
+			if state, exists := healthState[backend.Address]; exists {
+				healthy = state
+			}
+		}
+
 		pbBackends[i] = &pb.Backend{
 			Address: backend.Address,
 			Weight:  int32(backend.Weight),
-			Healthy: true,
+			Healthy: healthy,
 			HealthCheck: &pb.HealthCheckConfig{
 				IntervalSeconds: int32(backend.HealthCheck.Interval.Seconds()),
 				TimeoutSeconds:  int32(backend.HealthCheck.Timeout.Seconds()),
