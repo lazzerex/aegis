@@ -3,11 +3,13 @@ use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber;
 
+mod circuit_breaker;
 mod config;
 mod connection;
 mod grpc_server;
 mod load_balancer;
 mod metrics;
+mod rate_limiter;
 mod tcp_proxy;
 mod udp_proxy;
 
