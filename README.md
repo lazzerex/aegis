@@ -253,16 +253,45 @@ curl http://localhost:9090/status
 
 ### Option 2: Docker Compose (Production)
 
+Start the entire stack with Docker Compose:
+
 ```bash
-docker-compose up
+# Build images
+make docker-build
+
+# Start all services
+make docker-up
+
+# View logs
+make docker-logs
+
+# Test the deployment
+make docker-test
+
+# Stop all services
+make docker-down
+```
+
+Or use docker-compose directly:
+
+```bash
+docker-compose up -d
 ```
 
 This will start:
-- Aegis data plane
-- Aegis control plane
-- Sample backend services
-- Prometheus for metrics collection
-- Grafana for visualization
+- **Aegis data plane** (TCP/UDP proxy on ports 8080/8081)
+- **Aegis control plane** (Admin API on 9090, Metrics on 9091)
+- **Test backend servers** (HTTP backends on ports 3000-3002)
+- **UDP backend** (UDP echo server on port 5000)
+- **Prometheus** (Metrics collection on port 9092)
+- **Grafana** (Visualization on port 3030, default login: admin/admin)
+
+Access services:
+- Proxy: http://localhost:8080
+- Admin API: http://localhost:9090
+- Metrics: http://localhost:9091/metrics
+- Prometheus: http://localhost:9092
+- Grafana: http://localhost:3030
 
 ## Testing
 
