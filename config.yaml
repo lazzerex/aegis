@@ -4,19 +4,19 @@ proxy:
     udp: "0.0.0.0:8081"
   
   backends:
-    - address: "localhost:3000"
+    - address: "backend1:3000"
       weight: 100
       health_check:
         interval: 5s
         timeout: 2s
         path: "/health"
-    - address: "localhost:3001"
+    - address: "backend2:3001"
       weight: 100
       health_check:
         interval: 5s
         timeout: 2s
         path: "/health"
-    - address: "localhost:3002"
+    - address: "backend3:3002"
       weight: 50
       health_check:
         interval: 5s
@@ -41,8 +41,9 @@ proxy:
     timeout: 30s
 
 admin:
-  api_address: "127.0.0.1:9090"
+  api_address: "0.0.0.0:9090"
   metrics_address: "0.0.0.0:9091"
 
 grpc:
-  control_plane_address: "127.0.0.1:50051"
+  control_plane_address: "data-plane:50051"
+
