@@ -10,6 +10,32 @@ The control plane handles configuration, health checks, and load balancing logic
 
 Aegis is designed for production use in microservice architectures and backend infrastructure, but also serves as a reference implementation for building high-performance networked systems.
 
+> 📚 **New to Aegis?** Check out the [Quick Start Guide](QUICKSTART.md) for a fast reference!
+
+## Quick Start
+
+```bash
+# Clone and build
+git clone https://github.com/lazzerex/aegis.git
+cd aegis
+make all
+
+# Start test backends
+./test-proxy.sh start
+
+# Run Aegis (in separate terminals)
+make run-data      # Terminal 1
+make run-control   # Terminal 2
+
+# Test it
+./test-proxy.sh test-proxy
+
+# Stop test backends
+./test-proxy.sh stop
+```
+
+See the [Testing](#testing) section for detailed instructions.
+
 ## Features
 
 ### Phase 1 (MVP)
@@ -234,6 +260,113 @@ This will start:
 
 ## Testing
 
+### Quick Start Testing
+
+Aegis includes test backend servers and a convenient test script to quickly verify functionality.
+
+#### Automated Testing (Recommended)
+
+```bash
+# 1. Start test backend servers
+./test-proxy.sh start
+
+# 2. Build and start Aegis (in separate terminals)
+# Terminal 1: Data plane
+make run-data
+
+# Terminal 2: Control plane
+make run-control
+
+# 3. Test the proxy
+./test-proxy.sh test-proxy
+
+# 4. Check status of all services
+./test-proxy.sh status
+
+# 5. Stop test backends when done
+./test-proxy.sh stop
+```
+
+#### Manual Testing
+
+**Step 1: Start Backend Servers**
+
+```bash
+# Terminal 1
+python3 examples/simple-http-server.py --port 3000 --name backend1
+
+# Terminal 2
+python3 examples/simple-http-server.py --port 3001 --name backend2
+
+# Terminal 3
+python3 examples/simple-http-server.py --port 3002 --name backend3
+```
+
+**Step 2: Start Aegis**
+
+```bash
+# Terminal 4: Build and start data plane
+make build-rust
+make run-data
+
+# Terminal 5: Build and start control plane
+make build-go
+make run-control
+```
+
+**Step 3: Test Load Balancing**
+
+```bash
+# Send multiple requests to see round-robin distribution
+for i in {1..9}; do
+  echo "Request $i:"
+  curl -s http://localhost:8080/api/test
+  echo ""
+done
+```
+
+Expected output: Requests should rotate through backend1 → backend2 → backend3 → backend1...
+
+**Step 4: Test Health Checks**
+
+```bash
+# Check overall health
+curl http://localhost:9090/health
+
+# Expected: {"status":"ok","backends":{"localhost:3000":true,"localhost:3001":true,"localhost:3002":true}}
+```
+
+**Step 5: Test Backend Failover**
+
+```bash
+# Stop one backend (Ctrl+C in its terminal)
+# Then test again
+curl http://localhost:8080/api/test
+
+# Verify only healthy backends receive traffic
+curl http://localhost:9090/health
+```
+
+**Step 6: Monitor Metrics**
+
+```bash
+# View Prometheus metrics
+curl http://localhost:9091/metrics
+
+# Metrics include:
+# - go_goroutines
+# - go_memstats_*
+# - process_*
+# And more...
+```
+
+### Testing with netcat (Raw TCP)
+
+```bash
+# Test raw TCP connection
+printf "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" | nc localhost 8080
+```
+
 ### Unit Tests
 
 ```bash
@@ -242,59 +375,40 @@ cd control-plane && go test ./...
 
 # Test Rust data plane
 cd data-plane && cargo test
+
+# Run all tests
+make test
 ```
 
-### Integration Testing with NestJS Backend
+### Advanced Testing Scenarios
 
-1. **Start Backend Services**
-
+#### Test 1: Sustained Load
 ```bash
-# Terminal 1-3: Start NestJS instances on different ports
-npm run start:dev -- --port 3000
-npm run start:dev -- --port 3001
-npm run start:dev -- --port 3002
-```
+# Install Apache Bench (if not installed)
+# Ubuntu: sudo apt install apache2-utils
+# macOS: brew install httpd
 
-2. **Start Aegis**
-
-```bash
-# Terminal 4: Start data plane
-make run-data
-
-# Terminal 5: Start control plane
-make run-control
-```
-
-3. **Run Test Scenarios**
-
-#### Test 1: Load Distribution
-```bash
-# Send 100 requests and verify even distribution
-for i in {1..100}; do
-  curl -s http://localhost:8080/api/endpoint
-done
+# Send 1000 requests with 10 concurrent connections
+ab -n 1000 -c 10 http://localhost:8080/api/test
 ```
 
 #### Test 2: Health Check Failover
 ```bash
-# Kill one backend instance
-pkill -f "port 3000"
+# 1. Monitor backend health in real-time
+watch -n 1 'curl -s http://localhost:9090/health | jq'
 
-# Verify traffic automatically redirects to healthy backends
-curl http://localhost:9090/health
-curl http://localhost:8080/api/endpoint
+# 2. Stop a backend (Ctrl+C in backend terminal)
+# 3. Observe automatic traffic redirection to healthy backends
+# 4. Restart the backend and watch it rejoin the pool
 ```
 
-#### Test 3: Configuration Reload
+#### Test 3: Configuration Validation
 ```bash
-# Edit config.yaml (add/remove backends)
+# Edit config.yaml to add/modify backends
 vim config.yaml
 
-# Reload without dropping connections
-curl -X POST http://localhost:9090/reload
-
-# Verify new configuration
-curl http://localhost:9090/status
+# Restart control plane to apply changes
+# New configuration will be pushed to data plane automatically
 ```
 
 #### Test 4: Graceful Shutdown
@@ -433,6 +547,10 @@ aegis/
 │   │   ├── load_balancer.rs
 │   │   └── metrics.rs
 │   └── Cargo.toml
+├── examples/                # Testing utilities
+│   ├── simple-http-server.py  # Test backend server
+│   └── README.md           # Examples documentation
+├── test-proxy.sh            # Test automation script
 ├── config.yaml
 ├── Makefile
 ├── docker-compose.yml
