@@ -87,6 +87,34 @@ deps:
 	@echo "Installing Rust dependencies..."
 	cd data-plane && cargo fetch
 
+# Docker commands
+docker-build:
+	@echo "Building Docker images..."
+	docker-compose build
+
+docker-up:
+	@echo "Starting services with Docker Compose..."
+	docker-compose up -d
+
+docker-down:
+	@echo "Stopping services..."
+	docker-compose down
+
+docker-logs:
+	docker-compose logs -f
+
+docker-test:
+	@echo "Testing Aegis in Docker..."
+	@sleep 5
+	@echo "Testing TCP proxy..."
+	@curl -s http://localhost:8080/api/test || echo "TCP proxy not ready"
+	@echo "\nTesting UDP proxy..."
+	@echo "test" | nc -u -w1 localhost 8081 || echo "UDP proxy not ready"
+	@echo "\nChecking metrics..."
+	@curl -s http://localhost:9091/metrics | grep -i "proxy" | head -5 || echo "Metrics not ready"
+
+docker-restart: docker-down docker-up
+
 # Format code
 fmt:
 	cd control-plane && go fmt ./...
