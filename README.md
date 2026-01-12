@@ -21,42 +21,48 @@ cd aegis
 make all
 
 # Start test backends
-./test-proxy.sh start
+./scripts/test-proxy.sh start
 
 # Run Aegis (in separate terminals)
 make run-data      # Terminal 1
 make run-control   # Terminal 2
 
 # Test it
-./test-proxy.sh test-proxy
+./scripts/test-proxy.sh test-proxy
 
 # Stop test backends
-./test-proxy.sh stop
+./scripts/test-proxy.sh stop
 ```
 
 See the [Testing](#testing) section for detailed instructions.
 
 ## Features
 
-### Phase 1 (MVP)
-- **TCP Proxy**: High-performance TCP forwarding with async I/O
-- **Load Balancing**: Round-robin and weighted algorithms
-- **Health Checking**: Automatic backend health monitoring
-- **Metrics**: Prometheus-compatible metrics endpoint
-- **gRPC Communication**: Control/data plane separation
+### Proxy Capabilities
+- **TCP Proxy**: High-performance TCP forwarding with async I/O (Tokio)
+- **UDP Proxy**: Session-based UDP forwarding with bidirectional NAT mapping and connection tracking
+
+### Load Balancing
+- **Round-robin**: Equal distribution across backends
+- **Weighted round-robin**: Proportional distribution based on backend capacity
+- **Least connections**: Routes to backend with fewest active connections
+- **Consistent hashing**: Session affinity using client IP
+
+### Reliability & Performance
+- **Circuit Breaking**: Automatic failure detection and backend recovery with configurable thresholds
+- **Rate Limiting**: Token bucket algorithm with global and per-connection limits
+- **Health Checking**: Periodic backend health monitoring with automatic failover
 - **Graceful Shutdown**: Connection draining and cleanup
 
-### Phase 2 (Coming Soon)
-- UDP Proxy with NAT mapping
-- Circuit breaking
-- Rate limiting and traffic shaping
-- Advanced load balancing (least connections, consistent hashing)
+### Observability
+- **Prometheus Metrics**: Comprehensive metrics exposed on `/metrics` endpoint
+- **Structured Logging**: Detailed tracing with configurable log levels
+- **gRPC Communication**: Clean separation between control and data planes
 
-### Phase 3 (Future)
-- HTTP/2 support
-- WebSocket proxying
-- Distributed tracing (OpenTelemetry)
-- Hot reload without dropping connections
+### Coming Soon
+- Distributed tracing with OpenTelemetry
+- HTTP/2 support and WebSocket proxying
+- Hot configuration reload without dropping connections
 
 ## Architecture
 
@@ -382,6 +388,22 @@ make test
 
 ### Advanced Testing Scenarios
 
+#### Test Advanced Features
+
+```bash
+# Run comprehensive test suite for advanced features
+./scripts/test-advanced-features.sh
+
+# Tests include:
+# - Load balancing algorithms (round-robin, least-connections, weighted, consistent-hash)
+# - Rate limiting and burst handling
+# - Circuit breaker failure detection
+# - UDP proxy session management
+# - Metrics collection
+```
+
+See [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) for detailed testing instructions.
+
 #### Test 1: Sustained Load
 ```bash
 # Install Apache Bench (if not installed)
@@ -550,7 +572,9 @@ aegis/
 ├── examples/                # Testing utilities
 │   ├── simple-http-server.py  # Test backend server
 │   └── README.md           # Examples documentation
-├── test-proxy.sh            # Test automation script
+├── scripts/
+│   ├── test-proxy.sh            # Test automation script
+│   └── test-advanced-features.sh # Advanced features tests
 ├── config.yaml
 ├── Makefile
 ├── docker-compose.yml
