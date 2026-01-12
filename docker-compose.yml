@@ -1,42 +1,58 @@
 version: '3.8'
 
 services:
-  # Backend services (NestJS or any HTTP service)
+  # Test backend services using our Python servers
   backend1:
-    image: node:18-alpine
+    image: python:3.11-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run start:dev"
+    command: python simple-http-server.py --port 3000 --name backend1 --host 0.0.0.0
     ports:
       - "3000:3000"
     volumes:
-      - ./backend:/app
-    environment:
-      - PORT=3000
-      - SERVICE_NAME=backend1
+      - ./examples:/app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://0.0.0.0:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   backend2:
-    image: node:18-alpine
+    image: python:3.11-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run start:dev"
+    command: python simple-http-server.py --port 3001 --name backend2 --host 0.0.0.0
     ports:
       - "3001:3001"
     volumes:
-      - ./backend:/app
-    environment:
-      - PORT=3001
-      - SERVICE_NAME=backend2
+      - ./examples:/app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://0.0.0.0:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   backend3:
-    image: node:18-alpine
+    image: python:3.11-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run start:dev"
+    command: python simple-http-server.py --port 3002 --name backend3 --host 0.0.0.0
     ports:
       - "3002:3002"
     volumes:
-      - ./backend:/app
-    environment:
-      - PORT=3002
-      - SERVICE_NAME=backend3
+      - ./examples:/app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://0.0.0.0:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # UDP test backend
+  udp-backend:
+    image: python:3.11-alpine
+    working_dir: /app
+    command: python udp-echo-server.py --port 5000 --name udp-backend1 --host 0.0.0.0
+    ports:
+      - "5000:5000/udp"
+    volumes:
+      - ./examples:/app
 
   # Rust data plane
   data-plane:
@@ -47,10 +63,15 @@ services:
       - RUST_LOG=info
     ports:
       - "50051:50051"  # gRPC
+      - "8080:8080"    # TCP Proxy
+      - "8081:8081/udp" # UDP Proxy
     depends_on:
-      - backend1
-      - backend2
-      - backend3
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
+      backend3:
+        condition: service_healthy
 
   # Go control plane
   control-plane:
@@ -61,21 +82,18 @@ services:
       - "9090:9090"   # Admin API
       - "9091:9091"   # Metrics
     volumes:
-      - ./config.yaml:/app/config.yaml
+      - ./config.yaml:/app/config.yaml:ro
     depends_on:
       - data-plane
+      - backend1
+      - backend2
+      - backend3
     command: ["--config", "/app/config.yaml"]
-
-  # Proxy entry point
-  proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile.data
-    ports:
-      - "8080:8080"   # TCP Proxy
-      - "8081:8081"   # UDP Proxy
-    depends_on:
-      - control-plane
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # Prometheus for metrics
   prometheus:
