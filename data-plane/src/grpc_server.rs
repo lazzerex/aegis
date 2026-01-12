@@ -25,55 +25,81 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         request: Request<proxy::ProxyConfig>,
     ) -> Result<Response<proxy::ConfigAck>, Status> {
         let pb_config = request.into_inner();
-        
+
         info!("Received configuration update");
 
         // Convert protobuf config to internal config
         let config = ProxyConfig {
-            tcp_address: pb_config.listen.as_ref()
+            tcp_address: pb_config
+                .listen
+                .as_ref()
                 .map(|l| l.tcp_address.clone())
                 .unwrap_or_default(),
-            udp_address: pb_config.listen.as_ref()
+            udp_address: pb_config
+                .listen
+                .as_ref()
                 .map(|l| l.udp_address.clone())
                 .unwrap_or_default(),
-            backends: pb_config.backends.iter().map(|b| Backend {
-                address: b.address.clone(),
-                weight: b.weight,
-                healthy: b.healthy,
-            }).collect(),
-            algorithm: pb_config.load_balancing.as_ref()
+            backends: pb_config
+                .backends
+                .iter()
+                .map(|b| Backend {
+                    address: b.address.clone(),
+                    weight: b.weight,
+                    healthy: b.healthy,
+                })
+                .collect(),
+            algorithm: pb_config
+                .load_balancing
+                .as_ref()
                 .map(|lb| lb.algorithm.clone())
                 .unwrap_or_else(|| "round_robin".to_string()),
-            session_affinity: pb_config.load_balancing.as_ref()
+            session_affinity: pb_config
+                .load_balancing
+                .as_ref()
                 .map(|lb| lb.session_affinity)
                 .unwrap_or(false),
-            rate_limit_rps: pb_config.traffic.as_ref()
+            rate_limit_rps: pb_config
+                .traffic
+                .as_ref()
                 .and_then(|t| t.rate_limit.as_ref())
                 .map(|rl| rl.requests_per_second)
                 .unwrap_or(1000),
-            rate_limit_burst: pb_config.traffic.as_ref()
+            rate_limit_burst: pb_config
+                .traffic
+                .as_ref()
                 .and_then(|t| t.rate_limit.as_ref())
                 .map(|rl| rl.burst)
                 .unwrap_or(100),
-            connect_timeout_secs: pb_config.traffic.as_ref()
+            connect_timeout_secs: pb_config
+                .traffic
+                .as_ref()
                 .and_then(|t| t.timeout.as_ref())
                 .map(|to| to.connect_seconds)
                 .unwrap_or(5),
-            idle_timeout_secs: pb_config.traffic.as_ref()
+            idle_timeout_secs: pb_config
+                .traffic
+                .as_ref()
                 .and_then(|t| t.timeout.as_ref())
                 .map(|to| to.idle_seconds)
                 .unwrap_or(60),
-            read_timeout_secs: pb_config.traffic.as_ref()
+            read_timeout_secs: pb_config
+                .traffic
+                .as_ref()
                 .and_then(|t| t.timeout.as_ref())
                 .map(|to| to.read_seconds)
                 .unwrap_or(30),
         };
 
-        info!("Configured {} backends on TCP:{}, UDP:{}",
-              config.backends.len(),
-              config.tcp_address,
-              config.udp_address);
+        info!(
+            "Configured {} backends on TCP:{}, UDP:{}",
+            config.backends.len(),
+            config.tcp_address,
+            config.udp_address
+        );
 
+        // Reset draining state when receiving new configuration
+        self.state.reset_draining();
         self.state.update_config(config);
 
         Ok(Response::new(proxy::ConfigAck {
@@ -87,17 +113,23 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         request: Request<proxy::BackendList>,
     ) -> Result<Response<proxy::ReloadAck>, Status> {
         let backend_list = request.into_inner();
-        
+
         info!("Reloading {} backends", backend_list.backends.len());
 
-        let mut config = self.state.get_config()
+        let mut config = self
+            .state
+            .get_config()
             .ok_or_else(|| Status::failed_precondition("Proxy not configured"))?;
 
-        config.backends = backend_list.backends.iter().map(|b| Backend {
-            address: b.address.clone(),
-            weight: b.weight,
-            healthy: b.healthy,
-        }).collect();
+        config.backends = backend_list
+            .backends
+            .iter()
+            .map(|b| Backend {
+                address: b.address.clone(),
+                weight: b.weight,
+                healthy: b.healthy,
+            })
+            .collect();
 
         self.state.update_config(config);
 
@@ -113,23 +145,31 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         request: Request<proxy::DrainRequest>,
     ) -> Result<Response<proxy::DrainResponse>, Status> {
         let drain_req = request.into_inner();
-        
-        info!("Draining connections with timeout: {}s", drain_req.timeout_seconds);
+
+        info!(
+            "Draining connections with timeout: {}s",
+            drain_req.timeout_seconds
+        );
 
         let active_before = self.state.active_connection_count();
-        
+
         // Start draining
         let state = self.state.clone();
         let timeout = tokio::time::Duration::from_secs(drain_req.timeout_seconds as u64);
-        
+
         tokio::time::timeout(timeout, async move {
             state.drain_connections().await;
-        }).await.ok();
+        })
+        .await
+        .ok();
 
         let active_after = self.state.active_connection_count();
         let drained = active_before.saturating_sub(active_after);
 
-        info!("Drained {} connections ({} remaining)", drained, active_after);
+        info!(
+            "Drained {} connections ({} remaining)",
+            drained, active_after
+        );
 
         Ok(Response::new(proxy::DrainResponse {
             success: active_after == 0,
@@ -137,7 +177,8 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         }))
     }
 
-    type StreamMetricsStream = futures::stream::BoxStream<'static, Result<proxy::MetricsAck, Status>>;
+    type StreamMetricsStream =
+        futures::stream::BoxStream<'static, Result<proxy::MetricsAck, Status>>;
 
     async fn stream_metrics(
         &self,
@@ -149,7 +190,11 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         tokio::spawn(async move {
             while let Ok(Some(_metrics)) = stream.message().await {
                 // Acknowledge receipt
-                if tx.send(Ok(proxy::MetricsAck { received: true })).await.is_err() {
+                if tx
+                    .send(Ok(proxy::MetricsAck { received: true }))
+                    .await
+                    .is_err()
+                {
                     warn!("Failed to send metrics ack");
                     break;
                 }
