@@ -1,8 +1,34 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    cluster: 'aegis-proxy'
+    environment: 'development'
 
 scrape_configs:
-  - job_name: 'proxy-metrics'
+  # Aegis proxy metrics
+  - job_name: 'aegis-control-plane'
     static_configs:
       - targets: ['control-plane:9091']
+        labels:
+          service: 'control-plane'
+          component: 'metrics'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+# Example alerting rules (uncomment to enable)
+# rule_files:
+#   - 'alerts.yml'
+
+# Example alert manager configuration (uncomment to enable)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
