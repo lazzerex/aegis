@@ -120,11 +120,19 @@ func (c *Checker) updateHealthState(address string, healthy bool) {
 
 		// Reload backends with updated health state
 		backends := make([]config.Backend, 0, len(c.config.Proxy.Backends))
+		c.mu.RLock()
 		for _, backend := range c.config.Proxy.Backends {
-			backends = append(backends, backend)
+			// Copy backend and update health state
+			backendCopy := backend
+			if state, exists := c.healthState[backend.Address]; exists {
+				// Health state is tracked separately and sent to data plane
+				_ = state
+			}
+			backends = append(backends, backendCopy)
 		}
+		c.mu.RUnlock()
 
-		if err := c.grpcClient.ReloadBackends(backends); err != nil {
+		if err := c.grpcClient.ReloadBackendsWithHealth(backends, c.healthState); err != nil {
 			c.logger.Error("Failed to reload backends", zap.Error(err))
 		}
 	}
