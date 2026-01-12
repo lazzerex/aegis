@@ -1,30 +1,52 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-RUN apk add --no-cache git protobuf protobuf-dev
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    protobuf \
+    protobuf-dev \
+    make \
+    ca-certificates
+
+# Install Go protobuf plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# Copy proto files and generate
+COPY proto/ ./proto/
+COPY control-plane/proto/go.mod control-plane/proto/go.sum ./control-plane/proto/
+
+# Generate protobuf code
+RUN mkdir -p control-plane/proto && \
+    protoc --go_out=control-plane/proto --go_opt=paths=source_relative \
+           --go-grpc_out=control-plane/proto --go-grpc_opt=paths=source_relative \
+           proto/proxy.proto
 
 # Copy go mod files
-COPY control-plane/go.mod control-plane/go.sum ./
+COPY control-plane/go.mod control-plane/go.sum ./control-plane/
+WORKDIR /app/control-plane
 RUN go mod download
 
 # Copy source
 COPY control-plane/ ./
-COPY proto/ ./proto/
 
 # Build
-RUN go build -o aegis-control ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o aegis-control ./cmd/main.go
 
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 
-COPY --from=builder /app/aegis-control .
+COPY --from=builder /app/control-plane/aegis-control .
 
 EXPOSE 9090 9091
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q -O- http://localhost:9090/health || exit 1
 
 ENTRYPOINT ["./aegis-control"]
