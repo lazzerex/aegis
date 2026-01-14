@@ -318,12 +318,13 @@ This will start:
 - **Aegis data plane** (TCP/UDP proxy on ports 8080/8081)
 - **Aegis control plane** (Admin API on 9090, Metrics on 9091)
 - **Test backend servers** (HTTP backends on ports 3000-3002)
-- **UDP backend** (UDP echo server on port 5000)
+- **UDP backend servers** (UDP echo servers on ports 5001-5003)
 - **Prometheus** (Metrics collection on port 9092)
 - **Grafana** (Visualization on port 3030, default login: admin/admin)
 
 Access services:
-- Proxy: http://localhost:8080
+- TCP Proxy: http://localhost:8080
+- UDP Proxy: localhost:8081 (UDP)
 - Admin API: http://localhost:9090
 - Metrics: http://localhost:9091/metrics
 - Prometheus: http://localhost:9092
@@ -431,11 +432,44 @@ curl http://localhost:9091/metrics
 # And more...
 ```
 
-### Testing with netcat (Raw TCP)
+### Testing with netcat (Raw TCP/UDP)
 
 ```bash
 # Test raw TCP connection
 printf "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" | nc localhost 8080
+
+# Test UDP proxy
+echo "test_message" | nc -u -w1 localhost 8081
+```
+
+### UDP Proxy Testing
+
+Aegis includes a comprehensive UDP test suite:
+
+```bash
+# Start UDP backends
+make udp-backends-start
+# or
+./scripts/test-udp-proxy.sh start
+
+# Run comprehensive UDP tests
+make test-udp
+# or
+./scripts/test-udp-proxy.sh test
+
+# Tests include:
+# - Basic packet forwarding
+# - Load balancing across backends
+# - NAT session tracking
+# - Rate limiting
+# - Circuit breaker
+# - Metrics collection
+# - Stress testing (1000 packets)
+
+# Stop UDP backends
+make udp-backends-stop
+# or
+./scripts/test-udp-proxy.sh stop
 ```
 
 ### Unit Tests
@@ -717,10 +751,10 @@ protoc-gen-go --version
 - [x] Basic TCP proxy
 - [x] Health checking
 - [x] Metrics pipeline
-- [x] Load balancing (round-robin, weighted)
-- [ ] UDP proxy with NAT
-- [ ] Rate limiting
-- [ ] Circuit breaking
+- [x] Load balancing (round-robin, weighted, least-connections, consistent-hash)
+- [x] UDP proxy with NAT
+- [x] Rate limiting
+- [x] Circuit breaking
 - [ ] Hot reload without connection drops
 - [ ] HTTP/2 support
 - [ ] Distributed tracing
