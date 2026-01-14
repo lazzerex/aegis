@@ -14,23 +14,31 @@ RUN apk add --no-cache \
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# Copy proto files and generate
+# Copy proto source file for generation
 COPY proto/ ./proto/
+
+# Copy proto module files
 COPY control-plane/proto/go.mod control-plane/proto/go.sum ./control-plane/proto/
 
 # Generate protobuf code
 RUN mkdir -p control-plane/proto && \
-    protoc --go_out=control-plane/proto --go_opt=paths=source_relative \
-           --go-grpc_out=control-plane/proto --go-grpc_opt=paths=source_relative \
-           proto/proxy.proto
+    protoc --go_out=. --go_opt=paths=source_relative \
+           --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+           proto/proxy.proto && \
+    mv proto/proxy.pb.go proto/proxy_grpc.pb.go control-plane/proto/
 
-# Copy go mod files
-COPY control-plane/go.mod control-plane/go.sum ./control-plane/
-WORKDIR /app/control-plane
+# Download proto module dependencies
+WORKDIR /app/control-plane/proto
 RUN go mod download
 
-# Copy source
-COPY control-plane/ ./
+# Copy control-plane go.mod files and download dependencies
+WORKDIR /app/control-plane
+COPY control-plane/go.mod control-plane/go.sum ./
+RUN go mod download
+
+# Copy control-plane source code (cmd, internal, etc.)
+COPY control-plane/cmd ./cmd
+COPY control-plane/internal ./internal
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o aegis-control ./cmd/main.go
