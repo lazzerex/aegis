@@ -3,6 +3,7 @@ proxy:
     tcp: "0.0.0.0:8080"
     udp: "0.0.0.0:8081"
   
+  # TCP backends (HTTP services)
   backends:
     - address: "backend1:3000"
       weight: 100
@@ -22,6 +23,13 @@ proxy:
         interval: 5s
         timeout: 2s
         path: "/health"
+  
+  # UDP backends (for local testing, use localhost)
+  #docker will be udp-backend1:5000, udp-backend2:5001, udp-backend3:5002
+  # udp_backends:
+  #   - address: "localhost:5001"
+  #   - address: "localhost:5002"
+  #   - address: "localhost:5003"
 
   load_balancing:
     algorithm: "round_robin"  # Options: round_robin, weighted_round_robin, least_connections, consistent_hash
