@@ -14,7 +14,7 @@ RUN apk add --no-cache \
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# Copy proto source file for generation
+# Copy proto source file
 COPY proto/ ./proto/
 
 # Copy proto module files
