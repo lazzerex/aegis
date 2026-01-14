@@ -44,13 +44,31 @@ services:
       timeout: 5s
       retries: 3
 
-  # UDP test backend
-  udp-backend:
+  # UDP test backends for load balancing
+  udp-backend1:
     image: python:3.11-alpine
     working_dir: /app
     command: python udp-echo-server.py --port 5000 --name udp-backend1 --host 0.0.0.0
     ports:
-      - "5000:5000/udp"
+      - "5001:5000/udp"
+    volumes:
+      - ./examples:/app
+
+  udp-backend2:
+    image: python:3.11-alpine
+    working_dir: /app
+    command: python udp-echo-server.py --port 5000 --name udp-backend2 --host 0.0.0.0
+    ports:
+      - "5002:5000/udp"
+    volumes:
+      - ./examples:/app
+
+  udp-backend3:
+    image: python:3.11-alpine
+    working_dir: /app
+    command: python udp-echo-server.py --port 5000 --name udp-backend3 --host 0.0.0.0
+    ports:
+      - "5003:5000/udp"
     volumes:
       - ./examples:/app
 
@@ -72,6 +90,12 @@ services:
         condition: service_healthy
       backend3:
         condition: service_healthy
+      udp-backend1:
+        condition: service_started
+      udp-backend2:
+        condition: service_started
+      udp-backend3:
+        condition: service_started
 
   # Go control plane
   control-plane:
@@ -88,6 +112,9 @@ services:
       - backend1
       - backend2
       - backend3
+      - udp-backend1
+      - udp-backend2
+      - udp-backend3
     command: ["--config", "/app/config.yaml"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9090/health"]
