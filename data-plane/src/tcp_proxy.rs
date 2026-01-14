@@ -65,8 +65,12 @@ async fn handle_connection(
         .allow_request(Some(&client_addr.to_string()))
     {
         warn!("Rate limit exceeded for client: {}", client_addr);
+        state.metrics.record_rate_limit_denied();
         return Err("Rate limit exceeded".into());
     }
+    
+    state.metrics.record_rate_limit_allowed();
+    state.metrics.record_tcp_connection();
 
     // Register connection
     let (conn_id, _token) = state.register_connection();
@@ -88,10 +92,13 @@ async fn handle_connection(
             "Circuit breaker open for backend: {}, rejecting request",
             backend.address
         );
+        state.metrics.record_circuit_breaker_open();
+        state.metrics.record_backend_failure(&backend.address);
         return Err("Circuit breaker open".into());
     }
 
     debug!("Forwarding to backend: {}", backend.address);
+    state.metrics.record_backend_connection(&backend.address);
 
     // Track connection in load balancer
     load_balancer.increment_connections(&backend.address);
@@ -101,6 +108,7 @@ async fn handle_connection(
     };
 
     // Connect to backend with timeout
+    let start_time = std::time::Instant::now();
     let backend_result = tokio::time::timeout(
         tokio::time::Duration::from_secs(config.connect_timeout_secs as u64),
         TcpStream::connect(&backend.address),
@@ -109,18 +117,23 @@ async fn handle_connection(
 
     let mut backend_stream = match backend_result {
         Ok(Ok(stream)) => {
-            debug!("Connected to backend {}", backend.address);
+            let latency = start_time.elapsed().as_secs_f64() * 1000.0;
+            debug!("Connected to backend {} in {:.2}ms", backend.address, latency);
             state.circuit_breaker.record_success(&backend.address);
+            state.metrics.record_backend_request(&backend.address);
+            state.metrics.record_latency(latency);
             stream
         }
         Ok(Err(e)) => {
             error!("Failed to connect to backend {}: {}", backend.address, e);
             state.circuit_breaker.record_failure(&backend.address);
+            state.metrics.record_backend_failure(&backend.address);
             return Err(e.into());
         }
         Err(_) => {
             error!("Timeout connecting to backend {}", backend.address);
             state.circuit_breaker.record_failure(&backend.address);
+            state.metrics.record_backend_failure(&backend.address);
             return Err("Connection timeout".into());
         }
     };
@@ -128,30 +141,48 @@ async fn handle_connection(
     // Split streams for bidirectional copying
     let (mut client_read, mut client_write) = client.split();
     let (mut backend_read, mut backend_write) = backend_stream.split();
+    
+    let backend_addr_clone = backend.address.clone();
+    let state_clone = state.clone();
 
     // Bidirectional copy
     let client_to_backend = async {
         let mut buf = vec![0u8; 8192];
+        let mut total_bytes = 0u64;
         loop {
             let n = match client_read.read(&mut buf).await {
-                Ok(0) => return Ok::<_, std::io::Error>(()),
+                Ok(0) => {
+                    state_clone.metrics.record_bytes_sent(total_bytes);
+                    state_clone.metrics.record_backend_bytes_sent(&backend_addr_clone, total_bytes);
+                    return Ok::<_, std::io::Error>(());
+                }
                 Ok(n) => n,
                 Err(e) => return Err(e),
             };
 
+            total_bytes += n as u64;
             backend_write.write_all(&buf[..n]).await?;
         }
     };
+    
+    let backend_addr_clone2 = backend.address.clone();
+    let state_clone2 = state.clone();
 
     let backend_to_client = async {
         let mut buf = vec![0u8; 8192];
+        let mut total_bytes = 0u64;
         loop {
             let n = match backend_read.read(&mut buf).await {
-                Ok(0) => return Ok::<_, std::io::Error>(()),
+                Ok(0) => {
+                    state_clone2.metrics.record_bytes_received(total_bytes);
+                    state_clone2.metrics.record_backend_bytes_received(&backend_addr_clone2, total_bytes);
+                    return Ok::<_, std::io::Error>(());
+                }
                 Ok(n) => n,
                 Err(e) => return Err(e),
             };
 
+            total_bytes += n as u64;
             client_write.write_all(&buf[..n]).await?;
         }
     };
@@ -162,18 +193,21 @@ async fn handle_connection(
             if let Err(e) = result {
                 warn!("Client to backend error: {}", e);
                 state.circuit_breaker.record_failure(&backend.address);
+                state.metrics.record_backend_failure(&backend.address);
             }
         }
         result = backend_to_client => {
             if let Err(e) = result {
                 warn!("Backend to client error: {}", e);
                 state.circuit_breaker.record_failure(&backend.address);
+                state.metrics.record_backend_failure(&backend.address);
             }
         }
     }
 
     // Connection completed successfully
     state.circuit_breaker.record_success(&backend.address);
+    state.metrics.close_tcp_connection();
     debug!("Connection closed");
 
     // Drop the load balancer guard to decrement connection count
