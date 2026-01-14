@@ -147,6 +147,42 @@ protoc --version
 go version
 ```
 
+#### Configure Go PATH
+
+The Protocol Buffer plugins must be in your PATH for `protoc` to find them. If you get errors like `protoc-gen-go: program not found or is not executable`, follow these steps:
+
+**1. Check if plugins are installed:**
+```bash
+ls $(go env GOPATH)/bin
+```
+
+You should see `protoc-gen-go` and `protoc-gen-go-grpc`.
+
+**2. Add Go bin directory to PATH:**
+
+For **bash** users:
+```bash
+echo 'export GOPATH="$HOME/go"' >> ~/.bashrc
+echo 'export PATH="$PATH:$GOPATH/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+For **zsh** users:
+```bash
+echo 'export GOPATH="$HOME/go"' >> ~/.zshrc
+echo 'export PATH="$PATH:$GOPATH/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**3. Verify PATH is correct:**
+```bash
+which protoc-gen-go
+which protoc-gen-go-grpc
+protoc-gen-go --version
+```
+
+Expected output should show paths like `/home/yourusername/go/bin/protoc-gen-go`.
+
 ### Build Aegis
 
 ```bash
@@ -431,8 +467,6 @@ make test
 # - Metrics collection
 ```
 
-See [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) for detailed testing instructions.
-
 #### Test 1: Sustained Load
 ```bash
 # Install Apache Bench (if not installed)
@@ -651,8 +685,29 @@ make dev
 **3. Protobuf Generation Fails**
 - Verify protoc is installed: `protoc --version`
 - Install Go plugins: `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest`
+- **Important**: Ensure Go's bin directory is in your PATH (see [Configure Go PATH](#configure-go-path-important) section)
 
-**4. Backend Connection Refused**
+**4. `protoc-gen-go: program not found or is not executable`**
+
+This error means protoc can't find the Go plugins. Fix it by adding Go's bin directory to your PATH:
+
+```bash
+# Check where Go installs binaries
+go env GOPATH
+
+# Add to your shell config (~/.bashrc or ~/.zshrc)
+export GOPATH="$HOME/go"
+export PATH="$PATH:$GOPATH/bin"
+
+# Reload your shell
+source ~/.bashrc  # or source ~/.zshrc
+
+# Verify it works
+which protoc-gen-go
+protoc-gen-go --version
+```
+
+**5. Backend Connection Refused**
 - Ensure backend services are running
 - Check backend addresses in `config.yaml`
 - Verify health check paths are correct
