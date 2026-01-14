@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 
 use crate::circuit_breaker::CircuitBreakerManager;
+use crate::metrics::MetricsCollector;
 use crate::rate_limiter::RateLimiter;
 
 pub mod proxy {
@@ -41,6 +42,7 @@ pub struct ProxyState {
     draining: parking_lot::Mutex<bool>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub rate_limiter: Arc<RateLimiter>,
+    pub metrics: Arc<MetricsCollector>,
 }
 
 impl ProxyState {
@@ -48,6 +50,7 @@ impl ProxyState {
         // Initialize with default values - will be updated via config
         let default_circuit_breaker = Arc::new(CircuitBreakerManager::new(5, 30));
         let default_rate_limiter = Arc::new(RateLimiter::new(1000, 100));
+        let metrics = Arc::new(MetricsCollector::new());
 
         Self {
             config: RwLock::new(None),
@@ -57,6 +60,7 @@ impl ProxyState {
             draining: parking_lot::Mutex::new(false),
             circuit_breaker: default_circuit_breaker,
             rate_limiter: default_rate_limiter,
+            metrics,
         }
     }
 
@@ -129,5 +133,9 @@ impl ProxyState {
 
     pub fn reset_draining(&self) {
         *self.draining.lock() = false;
+    }
+
+    pub fn get_metrics(&self) -> Arc<MetricsCollector> {
+        self.metrics.clone()
     }
 }
