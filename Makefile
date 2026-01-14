@@ -58,6 +58,15 @@ test-proxy:
 test-advanced:
 	@./scripts/test-advanced-features.sh
 
+test-udp:
+	@./scripts/test-udp-proxy.sh test
+
+udp-backends-start:
+	@./scripts/test-udp-proxy.sh start
+
+udp-backends-stop:
+	@./scripts/test-udp-proxy.sh stop
+
 # Start/stop test backends
 backends-start:
 	@./scripts/test-proxy.sh start
@@ -108,10 +117,16 @@ docker-test:
 	@sleep 5
 	@echo "Testing TCP proxy..."
 	@curl -s http://localhost:8080/api/test || echo "TCP proxy not ready"
-	@echo "\nTesting UDP proxy..."
-	@echo "test" | nc -u -w1 localhost 8081 || echo "UDP proxy not ready"
-	@echo "\nChecking metrics..."
-	@curl -s http://localhost:9091/metrics | grep -i "proxy" | head -5 || echo "Metrics not ready"
+	@echo "\n=== Testing UDP proxy ==="
+	@echo "Sending test packets to UDP proxy..."
+	@for i in 1 2 3 4 5; do \
+		echo "test_packet_$$i" | nc -u -w1 localhost 8081 2>/dev/null || echo "UDP test $$i: no response"; \
+		sleep 0.5; \
+	done
+	@echo "\n=== Checking health ==="
+	@curl -s http://localhost:9090/health | jq . || echo "Health check not ready"
+	@echo "\n=== Checking metrics ==="
+	@curl -s http://localhost:9091/metrics | grep -E "(proxy|udp|tcp|rate_limit|circuit)" | head -10 || echo "Metrics not ready"
 
 docker-restart: docker-down docker-up
 
