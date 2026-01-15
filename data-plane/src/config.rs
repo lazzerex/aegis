@@ -23,6 +23,7 @@ pub struct ProxyConfig {
     pub tcp_address: String,
     pub udp_address: String,
     pub backends: Vec<Backend>,
+    pub udp_backends: Vec<Backend>,
     pub algorithm: String,
     pub session_affinity: bool,
     pub rate_limit_rps: i32,
