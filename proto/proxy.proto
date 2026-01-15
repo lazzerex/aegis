@@ -24,6 +24,7 @@ message ProxyConfig {
   LoadBalancingConfig load_balancing = 3;
   TrafficConfig traffic = 4;
   CircuitBreakerConfig circuit_breaker = 5;
+  repeated Backend udp_backends = 6;
 }
 
 message ListenConfig {
