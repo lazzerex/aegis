@@ -48,7 +48,8 @@ func (c *Client) UpdateConfig(cfg *config.Config) error {
 			TcpAddress: cfg.Proxy.Listen.TCP,
 			UdpAddress: cfg.Proxy.Listen.UDP,
 		},
-		Backends: make([]*pb.Backend, len(cfg.Proxy.Backends)),
+		Backends:    make([]*pb.Backend, len(cfg.Proxy.Backends)),
+		UdpBackends: make([]*pb.Backend, len(cfg.Proxy.UdpBackends)),
 		LoadBalancing: &pb.LoadBalancingConfig{
 			Algorithm:       cfg.Proxy.LoadBalancing.Algorithm,
 			SessionAffinity: cfg.Proxy.LoadBalancing.SessionAffinity,
@@ -73,6 +74,20 @@ func (c *Client) UpdateConfig(cfg *config.Config) error {
 	// Convert backends
 	for i, backend := range cfg.Proxy.Backends {
 		pbConfig.Backends[i] = &pb.Backend{
+			Address: backend.Address,
+			Weight:  int32(backend.Weight),
+			Healthy: true, // Initially all are healthy
+			HealthCheck: &pb.HealthCheckConfig{
+				IntervalSeconds: int32(backend.HealthCheck.Interval.Seconds()),
+				TimeoutSeconds:  int32(backend.HealthCheck.Timeout.Seconds()),
+				Path:            backend.HealthCheck.Path,
+			},
+		}
+	}
+
+	// Convert UDP backends
+	for i, backend := range cfg.Proxy.UdpBackends {
+		pbConfig.UdpBackends[i] = &pb.Backend{
 			Address: backend.Address,
 			Weight:  int32(backend.Weight),
 			Healthy: true, // Initially all are healthy
