@@ -1,4 +1,8 @@
-# this script helps start test backends and run tests against the proxy
+#!/bin/bash
+
+# Aegis TCP Proxy Test Script
+# Tests backend servers and proxy load balancing
+
 set -e
 
 RED='\033[0;31m'

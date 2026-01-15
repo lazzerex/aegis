@@ -5,21 +5,26 @@
 
 set -e
 
-GREEN='\033[0;32m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== Aegis Advanced Features Test Suite ===${NC}\n"
+function print_header() {
+    echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}     ${GREEN}Aegis Advanced Features Test Suite${NC}           ${BLUE}║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo
+}
 
-# Function to print test header
-test_header() {
-    echo -e "\n${YELLOW}[TEST]${NC} $1"
+function test_header() {
+    echo
+    echo -e "${YELLOW}[TEST]${NC} $1"
     echo "-----------------------------------"
 }
 
-# Function to check if service is running
-check_service() {
+function check_service() {
     local port=$1
     local name=$2
     if nc -z localhost $port 2>/dev/null; then
@@ -30,6 +35,9 @@ check_service() {
         return 1
     fi
 }
+
+# Main execution
+print_header
 
 # Check prerequisites
 test_header "Checking Prerequisites"

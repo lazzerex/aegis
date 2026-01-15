@@ -20,75 +20,93 @@ BACKEND3_PORT=5003
 TESTS_PASSED=0
 TESTS_FAILED=0
 
-print_header() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+function print_header() {
+    echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}            ${GREEN}$1${NC}                   ${BLUE}║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo
 }
 
-print_test() {
+function print_test() {
     echo -e "${YELLOW}[TEST]${NC} $1"
 }
 
-print_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
+function print_success() {
+    echo -e "${GREEN}✓${NC} $1"
     ((TESTS_PASSED++))
 }
 
-print_error() {
-    echo -e "${RED}[✗]${NC} $1"
+function print_error() {
+    echo -e "${RED}✗${NC} $1"
     ((TESTS_FAILED++))
 }
 
-print_info() {
+function print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
 # Start UDP echo servers on different ports
-start_backends() {
-    print_header "Starting UDP Backend Servers"
+function start_backends() {
+    print_header "Aegis UDP Proxy Test Script"
+    
+    echo -e "${YELLOW}Starting UDP backend servers...${NC}"
+    echo
     
     # Backend 1
     print_info "Starting backend1 on port $BACKEND1_PORT..."
     python3 examples/udp-echo-server.py --port $BACKEND1_PORT --name backend1 > /tmp/udp-backend1.log 2>&1 &
-    BACKEND1_PID=$!
-    echo $BACKEND1_PID > /tmp/udp-backend1.pid
+    echo $! > /tmp/udp-backend1.pid
     
     # Backend 2
     print_info "Starting backend2 on port $BACKEND2_PORT..."
     python3 examples/udp-echo-server.py --port $BACKEND2_PORT --name backend2 > /tmp/udp-backend2.log 2>&1 &
-    BACKEND2_PID=$!
-    echo $BACKEND2_PID > /tmp/udp-backend2.pid
+    echo $! >> /tmp/udp-backend2.pid
     
     # Backend 3
     print_info "Starting backend3 on port $BACKEND3_PORT..."
     python3 examples/udp-echo-server.py --port $BACKEND3_PORT --name backend3 > /tmp/udp-backend3.log 2>&1 &
-    BACKEND3_PID=$!
-    echo $BACKEND3_PID > /tmp/udp-backend3.pid
+    echo $! >> /tmp/udp-backend3.pid
     
     sleep 2
     print_success "All UDP backend servers started"
+    echo
+    echo "Logs:"
+    echo "  - /tmp/udp-backend1.log"
+    echo "  - /tmp/udp-backend2.log"
+    echo "  - /tmp/udp-backend3.log"
 }
 
-stop_backends() {
-    print_header "Stopping UDP Backend Servers"
+function stop_backends() {
+    echo -e "${YELLOW}Stopping UDP backend servers...${NC}"
     
-    if [ -f /tmp/udp-backend1.pid ]; then
-        kill $(cat /tmp/udp-backend1.pid) 2>/dev/null || true
-        rm -f /tmp/udp-backend1.pid
-        print_info "Backend1 stopped"
+    PID_FILE="/tmp/udp-backend1.pid"
+    if [ -f "$PID_FILE" ]; then
+        while read -r pid; do
+            if kill "$pid" 2>/dev/null; then
+                print_info "Backend1 stopped"
+            fi
+        done < "$PID_FILE"
+        rm -f "$PID_FILE"
     fi
     
-    if [ -f /tmp/udp-backend2.pid ]; then
-        kill $(cat /tmp/udp-backend2.pid) 2>/dev/null || true
-        rm -f /tmp/udp-backend2.pid
-        print_info "Backend2 stopped"
+    PID_FILE="/tmp/udp-backend2.pid"
+    if [ -f "$PID_FILE" ]; then
+        while read -r pid; do
+            if kill "$pid" 2>/dev/null; then
+                print_info "Backend2 stopped"
+            fi
+        done < "$PID_FILE"
+        rm -f "$PID_FILE"
     fi
     
-    if [ -f /tmp/udp-backend3.pid ]; then
-        kill $(cat /tmp/udp-backend3.pid) 2>/dev/null || true
-        rm -f /tmp/udp-backend3.pid
-        print_info "Backend3 stopped"
+    PID_FILE="/tmp/udp-backend3.pid"
+    if [ -f "$PID_FILE" ]; then
+        while read -r pid; do
+            if kill "$pid" 2>/dev/null; then
+                print_info "Backend3 stopped"
+            fi
+        done < "$PID_FILE"
+        rm -f "$PID_FILE"
     fi
     
     print_success "All UDP backend servers stopped"
