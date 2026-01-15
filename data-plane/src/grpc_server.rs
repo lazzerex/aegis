@@ -49,6 +49,15 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
                     healthy: b.healthy,
                 })
                 .collect(),
+            udp_backends: pb_config
+                .udp_backends
+                .iter()
+                .map(|b| Backend {
+                    address: b.address.clone(),
+                    weight: b.weight,
+                    healthy: b.healthy,
+                })
+                .collect(),
             algorithm: pb_config
                 .load_balancing
                 .as_ref()
@@ -102,8 +111,9 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         };
 
         info!(
-            "Configured {} backends on TCP:{}, UDP:{}",
+            "Configured {} TCP backends and {} UDP backends on TCP:{}, UDP:{}",
             config.backends.len(),
+            config.udp_backends.len(),
             config.tcp_address,
             config.udp_address
         );
