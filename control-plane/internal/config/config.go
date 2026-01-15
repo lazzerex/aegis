@@ -17,6 +17,7 @@ type Config struct {
 type ProxyConfig struct {
 	Listen         ListenConfig         `yaml:"listen"`
 	Backends       []Backend            `yaml:"backends"`
+	UdpBackends    []Backend            `yaml:"udp_backends"`
 	LoadBalancing  LoadBalancingConfig  `yaml:"load_balancing"`
 	Traffic        TrafficConfig        `yaml:"traffic"`
 	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
