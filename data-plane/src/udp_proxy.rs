@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
@@ -99,7 +99,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
     info!("UDP proxy listening on {}", config.udp_address);
 
     let load_balancer = Arc::new(LoadBalancer::new(
-        config.backends.clone(),
+        config.udp_backends.clone(),
         config.algorithm.clone(),
     ));
 
@@ -214,11 +214,16 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                     let mut session = sessions_clone.entry(client_key.clone()).or_insert_with(|| {
                         let backend = lb_clone
                             .select_backend_with_context(Some(&peer_addr.ip().to_string()))
-                            .expect("No healthy backends available");
+                            .expect("No healthy UDP backends available");
 
-                        // Resolve backend address
-                        let backend_socket_addr: SocketAddr = backend.address.parse()
-                            .expect("Invalid backend address");
+                        // Resolve backend address (supports both IP and hostname)
+                        let backend_socket_addr: SocketAddr = backend.address.to_socket_addrs()
+                            .ok()
+                            .and_then(|mut addrs| addrs.next())
+                            .unwrap_or_else(|| {
+                                error!("Failed to resolve UDP backend address '{}'", backend.address);
+                                panic!("Invalid UDP backend address format - expected 'host:port' or 'ip:port'");
+                            });
 
                         debug!(
                             "New UDP session: {} -> {} (NAT mapping established)",
