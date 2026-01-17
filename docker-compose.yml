@@ -83,19 +83,7 @@ services:
       - "50051:50051"  # gRPC
       - "8080:8080"    # TCP Proxy
       - "8081:8081/udp" # UDP Proxy
-    depends_on:
-      backend1:
-        condition: service_healthy
-      backend2:
-        condition: service_healthy
-      backend3:
-        condition: service_healthy
-      udp-backend1:
-        condition: service_started
-      udp-backend2:
-        condition: service_started
-      udp-backend3:
-        condition: service_started
+    restart: unless-stopped
 
   # Go control plane
   control-plane:
@@ -125,12 +113,17 @@ services:
   # Prometheus for metrics
   prometheus:
     image: prom/prometheus:latest
-    ports:
-      - "9092:9090"
+    network_mode: host
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.listen-address=:9092'
 
   # Grafana for visualization
   grafana:
@@ -139,8 +132,14 @@ services:
       - "3030:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
 
 volumes:
   grafana-storage:
+  prometheus-data:
