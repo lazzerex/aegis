@@ -9,7 +9,7 @@ scrape_configs:
   # Aegis proxy metrics
   - job_name: 'aegis-control-plane'
     static_configs:
-      - targets: ['control-plane:9091']
+      - targets: ['localhost:9091']
         labels:
           service: 'control-plane'
           component: 'metrics'
@@ -23,9 +23,9 @@ scrape_configs:
         labels:
           service: 'prometheus'
 
-# Example alerting rules (uncomment to enable)
-# rule_files:
-#   - 'alerts.yml'
+# Alerting rules
+rule_files:
+  - 'alerts.yml'
 
 # Example alert manager configuration (uncomment to enable)
 # alerting:
