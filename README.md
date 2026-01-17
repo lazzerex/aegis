@@ -205,6 +205,60 @@ The binaries will be created in the `bin/` directory:
 - `bin/aegis-control` - Go control plane
 - `bin/aegis-data` - Rust data plane
 
+## Production Usage
+
+### How Users Deploy Aegis
+
+Aegis is a **CLI-based infrastructure tool** (like nginx or HAProxy), designed for deployment in production environments.
+
+**Common Use Cases:**
+
+1. **Reverse Proxy** - Place Aegis in front of your application servers
+   ```
+   Internet → Aegis (port 80/443) → Your Backend Servers
+   ```
+
+2. **Load Balancer** - Distribute traffic across multiple instances
+   ```
+   Clients → Aegis → [Server 1, Server 2, Server 3, ...]
+   ```
+
+3. **API Gateway** - Route requests with rate limiting and circuit breaking
+   ```
+   Mobile/Web Apps → Aegis → Microservices
+   ```
+
+**Deployment Methods:**
+
+```bash
+# Option 1: Systemd Service (Linux)
+sudo systemctl start aegis
+sudo systemctl enable aegis
+
+# Option 2: Docker Compose (Containers)
+docker-compose up -d
+
+# Option 3: Kubernetes (Cloud-native)
+kubectl apply -f aegis-deployment.yaml
+
+# Option 4: Direct Binary (Development)
+./aegis-data --config config.yaml
+```
+
+**Management:**
+- Configure via YAML files (`config.yaml`)
+- Monitor via Prometheus metrics (`:9091/metrics`)
+- Control via Admin API (`:9090`)
+- View dashboards with Grafana (connects to Prometheus)
+
+**No GUI Required** - Aegis is infrastructure software managed through:
+- Configuration files (YAML)
+- Command-line interface
+- HTTP Admin API
+- Monitoring dashboards (Grafana/Prometheus)
+
+For detailed production testing examples, including testing with real websites and APIs, see the [Production Testing Guide](PRODUCTION_TESTING.md).
+
 ## Configuration
 
 Edit `config.yaml` to configure the proxy:
@@ -335,6 +389,8 @@ Access services:
 ### Quick Start Testing
 
 Aegis includes test backend servers and a convenient test script to quickly verify functionality.
+
+> 🌐 **Want to test with real websites?** See [Production Testing Guide](PRODUCTION_TESTING.md) for testing with actual production services like Vercel, AWS, or any external API.
 
 #### Automated Testing (Recommended)
 
