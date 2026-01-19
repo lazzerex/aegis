@@ -20,24 +20,34 @@ proto:
 # Build Go control plane
 build-go: proto
 	@echo "Building Go control plane..."
+	@mkdir -p bin
 	cd control-plane && go mod download
-	cd control-plane && go build -o ../bin/aegis-control ./cmd/main.go
+	cd control-plane && go build -o aegis-control ./cmd/main.go
+	@echo "✓ Control plane binary: control-plane/aegis-control"
 
 # Build Rust data plane
 build-rust:
 	@echo "Building Rust data plane..."
 	cd data-plane && cargo build --release
-	cp data-plane/target/release/aegis-data bin/
+	@echo "✓ Data plane binary: data-plane/target/release/aegis-data"
 
 # Run control plane
-run-control: build-go
+run-control:
 	@echo "Starting Aegis control plane..."
-	./bin/aegis-control --config config.yaml
+	@if [ ! -f "control-plane/aegis-control" ]; then \
+		echo "Error: Control plane not built. Run 'make build-go' first."; \
+		exit 1; \
+	fi
+	./control-plane/aegis-control --config config.yaml
 
 # Run data plane
-run-data: build-rust
+run-data:
 	@echo "Starting Aegis data plane..."
-	RUST_LOG=info ./bin/aegis-data
+	@if [ ! -f "data-plane/target/release/aegis-data" ]; then \
+		echo "Error: Data plane not built. Run 'make build-rust' first."; \
+		exit 1; \
+	fi
+	cd data-plane && RUST_LOG=info ./target/release/aegis-data --config ../config.yaml
 
 # Run both (in separate terminals required)
 run: build-go build-rust
@@ -80,7 +90,7 @@ backends-status:
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	rm -rf bin/
+	rm -f control-plane/aegis-control
 	rm -rf control-plane/proto/*.pb.go
 	cd control-plane && go clean
 	cd data-plane && cargo clean
@@ -142,7 +152,3 @@ lint:
 
 # Development workflow
 dev: fmt lint test build-go build-rust
-
-# Create bin directory
-init:
-	mkdir -p bin
