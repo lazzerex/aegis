@@ -39,8 +39,11 @@ make all
 ./scripts/test-proxy.sh start
 
 # Run Aegis (in separate terminals)
-make run-data      # Terminal 1: Data plane
-make run-control   # Terminal 2: Control plane
+# Terminal 1: Data plane
+make run-data
+
+# Terminal 2: Control plane
+make run-control
 
 # Test it
 ./scripts/test-proxy.sh test-proxy
@@ -214,9 +217,9 @@ make build-go      # Build Go control plane
 make build-rust    # Build Rust data plane
 ```
 
-The binaries will be created in the `bin/` directory:
-- `bin/aegis-control` - Go control plane
-- `bin/aegis-data` - Rust data plane
+The binaries will be created at:
+- `control-plane/aegis-control` - Go control plane
+- `data-plane/target/release/aegis-data` - Rust data plane
 
 ## Production Usage
 
@@ -255,7 +258,13 @@ docker-compose up -d
 kubectl apply -f aegis-deployment.yaml
 
 # Option 4: Direct Binary (Development)
-./aegis-data --config config.yaml
+# Use make commands (recommended)
+make run-data
+make run-control
+
+# Or run binaries directly
+./data-plane/target/release/aegis-data --config config.yaml
+./control-plane/aegis-control --config config.yaml
 ```
 
 **Management:**
