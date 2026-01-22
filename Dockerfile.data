@@ -26,8 +26,8 @@ RUN mkdir src && \
 COPY data-plane/src ./src
 
 # Build with optimizations
-RUN cargo build --release && \
-    strip target/release/aegis-data
+RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && \
+    strip target/x86_64-unknown-linux-musl/release/aegis-data
 
 # Final stage
 FROM alpine:latest
@@ -36,7 +36,7 @@ RUN apk --no-cache add ca-certificates libgcc busybox-extras
 
 WORKDIR /root/
 
-COPY --from=builder /app/target/release/aegis-data .
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/aegis-data .
 
 EXPOSE 50051 8080 8081
 
