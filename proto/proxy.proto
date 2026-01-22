@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package proxy;
 
+import "google/protobuf/empty.proto";
+
 option go_package = "github.com/lazzerex/aegis/control-plane/proto";
 
 // ProxyControl service handles communication between Go control plane and Rust data plane
@@ -9,8 +11,8 @@ service ProxyControl {
   // Push configuration updates from Go → Rust
   rpc UpdateConfig(ProxyConfig) returns (ConfigAck);
   
-  // Stream metrics from Rust → Go
-  rpc StreamMetrics(stream MetricsData) returns (stream MetricsAck);
+  // stream metrics from rust to go 
+  rpc StreamMetrics(google.protobuf.Empty) returns (stream MetricsData);
   
   // Control commands
   rpc DrainConnections(DrainRequest) returns (DrainResponse);
@@ -116,8 +118,4 @@ message BackendMetrics {
   int64 total_requests = 3;
   int64 failed_requests = 4;
   double avg_latency_ms = 5;
-}
-
-message MetricsAck {
-  bool received = 1;
 }
