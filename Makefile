@@ -47,7 +47,7 @@ run-data:
 		echo "Error: Data plane not built. Run 'make build-rust' first."; \
 		exit 1; \
 	fi
-	cd data-plane && RUST_LOG=info ./target/release/aegis-data --config ../config.yaml
+	cd data-plane && RUST_LOG=info ./target/release/aegis-data
 
 # Run both (in separate terminals required)
 run: build-go build-rust
