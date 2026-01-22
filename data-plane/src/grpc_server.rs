@@ -1,4 +1,9 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use futures::{stream::BoxStream, StreamExt};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 
@@ -197,34 +202,65 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
         }))
     }
 
-    type StreamMetricsStream =
-        futures::stream::BoxStream<'static, Result<proxy::MetricsAck, Status>>;
+    type StreamMetricsStream = BoxStream<'static, Result<proxy::MetricsData, Status>>;
 
     async fn stream_metrics(
         &self,
-        request: Request<tonic::Streaming<proxy::MetricsData>>,
+        _request: Request<proxy::Empty>,
     ) -> Result<Response<Self::StreamMetricsStream>, Status> {
-        let mut stream = request.into_inner();
         let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let state = self.state.clone();
 
         tokio::spawn(async move {
-            while let Ok(Some(_metrics)) = stream.message().await {
-                // Acknowledge receipt
-                if tx
-                    .send(Ok(proxy::MetricsAck { received: true }))
-                    .await
-                    .is_err()
-                {
-                    warn!("Failed to send metrics ack");
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+
+            loop {
+                interval.tick().await;
+
+                let metrics = state.get_metrics();
+                let summary = metrics.get_summary();
+
+                let active_connections =
+                    summary.active_tcp_connections + summary.active_udp_sessions;
+                let total_connections = summary.tcp_connections + summary.udp_sessions;
+
+                let backend_metrics = metrics
+                    .get_backend_metrics()
+                    .into_iter()
+                    .map(|(address, backend)| proxy::BackendMetrics {
+                        address,
+                        active_connections: backend.connections.load(Ordering::Relaxed) as i64,
+                        total_requests: backend.requests.load(Ordering::Relaxed) as i64,
+                        failed_requests: backend.failures.load(Ordering::Relaxed) as i64,
+                        avg_latency_ms: 0.0,
+                    })
+                    .collect();
+
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+
+                let data = proxy::MetricsData {
+                    active_connections: active_connections as i64,
+                    total_connections: total_connections as i64,
+                    bytes_sent: summary.bytes_sent as i64,
+                    bytes_received: summary.bytes_received as i64,
+                    avg_latency_ms: summary.latency.avg,
+                    p99_latency_ms: summary.latency.p99,
+                    backend_metrics,
+                    timestamp,
+                };
+
+                if tx.send(data).await.is_err() {
+                    warn!("Metrics stream receiver dropped");
                     break;
                 }
             }
         });
 
-        let stream = futures::stream::unfold(rx, |mut rx| async move {
-            rx.recv().await.map(|item| (item, rx))
-        });
+        let stream = ReceiverStream::new(rx).map(Ok).boxed();
 
-        Ok(Response::new(Box::pin(stream) as Self::StreamMetricsStream))
+        Ok(Response::new(stream))
     }
 }
