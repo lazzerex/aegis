@@ -22,6 +22,13 @@ type Collector struct {
 	backendRequests    *prometheus.CounterVec
 	backendFailures    *prometheus.CounterVec
 	backendLatency     *prometheus.GaugeVec
+
+	// Track last reported values to avoid double-counting streamed totals
+	lastTotalConnections float64
+	lastBytesSent        float64
+	lastBytesReceived    float64
+	lastBackendRequests  map[string]float64
+	lastBackendFailures  map[string]float64
 }
 
 func NewCollector() *Collector {
@@ -78,6 +85,9 @@ func NewCollector() *Collector {
 			},
 			[]string{"backend"},
 		),
+
+		lastBackendRequests: make(map[string]float64),
+		lastBackendFailures: make(map[string]float64),
 	}
 }
 
@@ -87,17 +97,40 @@ func (c *Collector) UpdateFromProto(data *pb.MetricsData) {
 
 	// Update global metrics
 	c.activeConnections.Set(float64(data.ActiveConnections))
-	c.totalConnections.Add(float64(data.TotalConnections))
-	c.bytesSent.Add(float64(data.BytesSent))
-	c.bytesReceived.Add(float64(data.BytesReceived))
+
+	// Convert cumulative counts to increments before adding to counters
+	if delta := float64(data.TotalConnections) - c.lastTotalConnections; delta > 0 {
+		c.totalConnections.Add(delta)
+		c.lastTotalConnections = float64(data.TotalConnections)
+	}
+
+	if delta := float64(data.BytesSent) - c.lastBytesSent; delta > 0 {
+		c.bytesSent.Add(delta)
+		c.lastBytesSent = float64(data.BytesSent)
+	}
+
+	if delta := float64(data.BytesReceived) - c.lastBytesReceived; delta > 0 {
+		c.bytesReceived.Add(delta)
+		c.lastBytesReceived = float64(data.BytesReceived)
+	}
 	c.avgLatency.Set(data.AvgLatencyMs)
 	c.p99Latency.Set(data.P99LatencyMs)
 
 	// Update backend metrics
 	for _, backend := range data.BackendMetrics {
-		c.backendConnections.WithLabelValues(backend.Address).Set(float64(backend.ActiveConnections))
-		c.backendRequests.WithLabelValues(backend.Address).Add(float64(backend.TotalRequests))
-		c.backendFailures.WithLabelValues(backend.Address).Add(float64(backend.FailedRequests))
-		c.backendLatency.WithLabelValues(backend.Address).Set(backend.AvgLatencyMs)
+		addr := backend.Address
+
+		c.backendConnections.WithLabelValues(addr).Set(float64(backend.ActiveConnections))
+		c.backendLatency.WithLabelValues(addr).Set(backend.AvgLatencyMs)
+
+		if delta := float64(backend.TotalRequests) - c.lastBackendRequests[addr]; delta > 0 {
+			c.backendRequests.WithLabelValues(addr).Add(delta)
+			c.lastBackendRequests[addr] = float64(backend.TotalRequests)
+		}
+
+		if delta := float64(backend.FailedRequests) - c.lastBackendFailures[addr]; delta > 0 {
+			c.backendFailures.WithLabelValues(addr).Add(delta)
+			c.lastBackendFailures[addr] = float64(backend.FailedRequests)
+		}
 	}
 }
