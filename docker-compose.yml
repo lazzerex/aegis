@@ -84,6 +84,12 @@ services:
       - "8080:8080"    # TCP Proxy
       - "8081:8081/udp" # UDP Proxy
     restart: unless-stopped
+    healthcheck:        #why are we even failing healthchecks sometimes??
+      test: ["CMD", "nc", "-n", "-z", "127.0.0.1", "50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Go control plane
   control-plane:
@@ -113,7 +119,8 @@ services:
   # Prometheus for metrics
   prometheus:
     image: prom/prometheus:latest
-    network_mode: host
+    ports:
+      - "9092:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml
@@ -123,7 +130,7 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--web.listen-address=:9092'
+      - '--web.listen-address=:9090'
 
   # Grafana for visualization
   grafana:
