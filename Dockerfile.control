@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -10,9 +10,9 @@ RUN apk add --no-cache \
     make \
     ca-certificates
 
-# Install Go protobuf plugins
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# Install Go protobuf plugins (pinned versions for compatibility)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.32.0 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 
 # Copy proto source file
 COPY proto/ ./proto/
@@ -41,7 +41,8 @@ COPY control-plane/cmd ./cmd
 COPY control-plane/internal ./internal
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o aegis-control ./cmd/main.go
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o aegis-control ./cmd/main.go
 
 # Final stage
 FROM alpine:latest
