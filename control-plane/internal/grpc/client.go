@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Client struct {
@@ -172,40 +173,25 @@ func (c *Client) DrainConnections(ctx context.Context, timeoutSeconds int) error
 }
 
 func (c *Client) StreamMetrics(collector *metrics.Collector) error {
-	stream, err := c.client.StreamMetrics(context.Background())
+	stream, err := c.client.StreamMetrics(context.Background(), &emptypb.Empty{})
 	if err != nil {
 		return fmt.Errorf("failed to start metrics stream: %w", err)
 	}
 
-	// Start receiving metrics
+	// Receive metrics from the data plane and update Prometheus collector
 	go func() {
 		for {
-			ack, err := stream.Recv()
+			metricsData, err := stream.Recv()
 			if err == io.EOF {
 				c.logger.Info("Metrics stream closed")
 				return
 			}
 			if err != nil {
-				c.logger.Error("Error receiving metrics ack", zap.Error(err))
+				c.logger.Error("Error receiving metrics data", zap.Error(err))
 				return
 			}
 
-			c.logger.Debug("Received metrics ack", zap.Bool("received", ack.Received))
-		}
-	}()
-
-	// Start sending metrics requests (in a real implementation, collect actual metrics)
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			// In a real implementation, we would collect metrics from the data plane
-			// For now, just send empty requests
-			if err := stream.Send(&pb.MetricsData{}); err != nil {
-				c.logger.Error("Error sending metrics request", zap.Error(err))
-				return
-			}
+			collector.UpdateFromProto(metricsData)
 		}
 	}()
 
