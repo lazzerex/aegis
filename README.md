@@ -10,14 +10,24 @@ The control plane handles configuration, health checks, and load balancing logic
 
 Aegis is designed for production use in microservice architectures and backend infrastructure, and also serves as a reference implementation for building high-performance networked systems.
 
-#### Grafana Dashboard Screenshots
+### Grafana Dashboard Screenshots
 
 **Aegis Proxy Dashboard:**
 
+<img width="1687" height="691" alt="image" src="https://github.com/user-attachments/assets/a9513dba-bfa6-4124-9467-34d78635029f" />
 
-#### Prometheus Dashboard Screenshots
+<img width="1652" height="619" alt="image" src="https://github.com/user-attachments/assets/b58c3383-eaac-4828-ad5a-b25abd29884a" />
 
-**Prometheus Metrics Explorer:**
+<img width="1606" height="620" alt="image" src="https://github.com/user-attachments/assets/f4540413-cfed-4a17-ac0d-4bce2f1e38b7" />
+
+
+
+### Prometheus Dashboard Screenshots
+
+**Prometheus Target Health:**
+
+<img width="1920" height="629" alt="image" src="https://github.com/user-attachments/assets/0ba81e1c-8e78-428f-9064-7a7835838abc" />
+
 
 
 ## Table of Contents
