@@ -9,6 +9,7 @@ description = "Aegis high-performance data plane"
 tokio = { version = "1.35", features = ["full"] }
 tonic = "0.10"
 prost = "0.12"
+prost-types = "0.12"
 bytes = "1.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
