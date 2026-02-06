@@ -102,6 +102,52 @@ make run-control
 
 ## Architecture
 
+### System Overview
+#### End-to-end data flow from clients through Aegis proxy to backend services:
+
+<img width="1193" height="530" alt="image" src="https://github.com/user-attachments/assets/e4c6539c-3493-4193-babb-782b18866ce8" />
+
+### Data Plane Request Pipeline
+#### How each request flows through the proxy with rate limiting and circuit breaking: 
+
+<img width="1130" height="261" alt="image" src="https://github.com/user-attachments/assets/bc73d016-af9c-46f8-86d0-9c761862070d" />
+
+
+### Control Plane Architecture
+#### Configuration management and health monitoring system:
+
+<img width="896" height="579" alt="image" src="https://github.com/user-attachments/assets/1ebdf674-4a39-4657-9229-c2d9163eec94" />
+
+### Data Plane Internal
+#### Async I/O processing with Tokio runtime
+
+<img width="443" height="778" alt="image" src="https://github.com/user-attachments/assets/3c8a8581-e170-4bc0-8981-d43593ae1e9d" />
+
+
+### Monitoring & Observability
+#### Real-time metrics collection and visualization:
+
+<img width="796" height="316" alt="image" src="https://github.com/user-attachments/assets/3b910520-7549-4184-a119-27ca2ceea270" />
+
+
+### Docker Compose Deployment
+#### Complete containerized stack with all services:
+
+<img width="955" height="541" alt="image" src="https://github.com/user-attachments/assets/2d4faa9d-3f94-4d71-ae20-9f8700feec3a" />
+
+### Load Balancing Algorithms
+#### Four strategies for distributing traffic across backends
+
+<img width="1089" height="289" alt="image" src="https://github.com/user-attachments/assets/54dec921-844d-44cb-af7e-517aa542b8b8" />
+
+
+### Circuit Breaker State Machine
+#### Automatic failure detection and recovery:
+
+<img width="900" height="798" alt="image" src="https://github.com/user-attachments/assets/e2c02802-ee53-469e-add1-1774b2645923" />
+
+
+### Basic Overview
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Go Control Plane                         │
