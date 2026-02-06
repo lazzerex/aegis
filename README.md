@@ -10,6 +10,16 @@ The control plane handles configuration, health checks, and load balancing logic
 
 Aegis is designed for production use in microservice architectures and backend infrastructure, and also serves as a reference implementation for building high-performance networked systems.
 
+#### Grafana Dashboard Screenshots
+
+**Aegis Proxy Dashboard:**
+
+
+#### Prometheus Dashboard Screenshots
+
+**Prometheus Metrics Explorer:**
+
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -379,21 +389,19 @@ This method runs the complete stack including monitoring tools.
 **Start the stack:**
 
 ```bash
-# Build and start all services
-make docker-build
-make docker-up
+# Option 1: Using Make commands (wrapper around docker-compose)
+make docker-build        # Build images
+make docker-up           # Start all services
+make docker-logs         # View logs
+make docker-down         # Stop all services
 
-# Or use docker-compose directly
-docker-compose up -d
-
-# View logs
-make docker-logs
-
-# Test the deployment
-make docker-test
-
-# Stop all services
-make docker-down
+# Option 2: Using docker-compose directly (recommended)
+docker-compose up --build -d     # Build and start in detached mode
+docker-compose ps                # Check status
+docker-compose logs -f           # Follow logs
+docker-compose logs -f grafana   # Follow specific service
+docker-compose down              # Stop all services
+docker-compose down -v           # Stop and remove volumes
 ```
 
 **Services started:**
@@ -435,6 +443,13 @@ make run-control      # Start control plane
 make docker-build     # Build images
 make docker-up        # Start stack
 make docker-down      # Stop stack
+make docker-logs      # View logs
+
+# Or use docker-compose directly
+docker-compose up --build -d    # Build and start
+docker-compose ps               # Check status
+docker-compose logs -f          # View logs
+docker-compose down             # Stop stack
 
 # Development
 make test             # Run tests
@@ -797,6 +812,7 @@ curl -s http://localhost:9091/metrics | grep proxy_requests_total
 3. Add new panels or modify existing ones
 4. Click "Save dashboard" to persist changes
 
+
 ### Prometheus Configuration
 
 Prometheus is configured to scrape metrics every 10 seconds. Configuration in `prometheus.yml`:
@@ -831,6 +847,8 @@ open http://localhost:9092/alerts
 # View alert rules
 open http://localhost:9092/rules
 ```
+
+
 
 ### Testing Monitoring
 
