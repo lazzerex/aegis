@@ -206,7 +206,7 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
 
     async fn stream_metrics(
         &self,
-        _request: Request<proxy::Empty>,
+        _request: Request<()>,
     ) -> Result<Response<Self::StreamMetricsStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
         let state = self.state.clone();
