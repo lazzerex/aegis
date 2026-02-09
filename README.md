@@ -1,8 +1,14 @@
 # Aegis
 
+<p align="center">
+<img width="667" height="374" alt="aegis" src="https://github.com/user-attachments/assets/f5828a33-c3ca-4ba6-93e9-5f722cc5219e" />
+</p>
+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-blue)](https://golang.org)
 [![Rust Version](https://img.shields.io/badge/Rust-1.75%2B-orange)](https://www.rust-lang.org)
+
 
 Aegis is a high-performance network proxy that combines Go's control plane with Rust's data plane for optimal performance and maintainability.
 
