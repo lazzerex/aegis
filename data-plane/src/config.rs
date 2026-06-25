@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 
 use crate::circuit_breaker::CircuitBreakerManager;
+use crate::load_balancer::LoadBalancer;
 use crate::metrics::MetricsCollector;
 use crate::rate_limiter::RateLimiter;
 
@@ -41,17 +42,20 @@ pub struct ProxyState {
     active_connections: DashMap<u64, Arc<()>>,
     connection_counter: parking_lot::Mutex<u64>,
     draining: parking_lot::Mutex<bool>,
-    pub circuit_breaker: Arc<CircuitBreakerManager>,
-    pub rate_limiter: Arc<RateLimiter>,
+    pub circuit_breaker: RwLock<Arc<CircuitBreakerManager>>,
+    pub rate_limiter: RwLock<Arc<RateLimiter>>,
     pub metrics: Arc<MetricsCollector>,
+    tcp_lb: RwLock<Arc<LoadBalancer>>,
+    udp_lb: RwLock<Arc<LoadBalancer>>,
 }
 
 impl ProxyState {
     pub fn new() -> Self {
-        // Initialize with default values - will be updated via config
         let default_circuit_breaker = Arc::new(CircuitBreakerManager::new(5, 30));
         let default_rate_limiter = Arc::new(RateLimiter::new(1000, 100));
         let metrics = Arc::new(MetricsCollector::new());
+        let default_tcp_lb = Arc::new(LoadBalancer::new(vec![], "round_robin".to_string()));
+        let default_udp_lb = Arc::new(LoadBalancer::new(vec![], "round_robin".to_string()));
 
         Self {
             config: RwLock::new(None),
@@ -59,14 +63,15 @@ impl ProxyState {
             active_connections: DashMap::new(),
             connection_counter: parking_lot::Mutex::new(0),
             draining: parking_lot::Mutex::new(false),
-            circuit_breaker: default_circuit_breaker,
-            rate_limiter: default_rate_limiter,
+            circuit_breaker: RwLock::new(default_circuit_breaker),
+            rate_limiter: RwLock::new(default_rate_limiter),
             metrics,
+            tcp_lb: RwLock::new(default_tcp_lb),
+            udp_lb: RwLock::new(default_udp_lb),
         }
     }
 
     pub fn update_config(&self, config: ProxyConfig) {
-        // Update circuit breaker and rate limiter based on new config
         let circuit_breaker = Arc::new(CircuitBreakerManager::new(
             config.circuit_breaker_threshold,
             config.circuit_breaker_timeout_secs,
@@ -75,17 +80,29 @@ impl ProxyState {
             config.rate_limit_rps as u64,
             config.rate_limit_burst as u64,
         ));
+        let tcp_lb = Arc::new(LoadBalancer::new(
+            config.backends.clone(),
+            config.algorithm.clone(),
+        ));
+        let udp_lb = Arc::new(LoadBalancer::new(
+            config.udp_backends.clone(),
+            config.algorithm.clone(),
+        ));
 
-        // Replace the circuit breaker and rate limiter
-        // Note: This is safe because we're using Arc
-        unsafe {
-            let self_mut = self as *const Self as *mut Self;
-            (*self_mut).circuit_breaker = circuit_breaker;
-            (*self_mut).rate_limiter = rate_limiter;
-        }
-
+        *self.circuit_breaker.write() = circuit_breaker;
+        *self.rate_limiter.write() = rate_limiter;
+        *self.tcp_lb.write() = tcp_lb;
+        *self.udp_lb.write() = udp_lb;
         *self.config.write() = Some(config);
         self.config_notify.notify_waiters();
+    }
+
+    pub fn get_tcp_lb(&self) -> Arc<LoadBalancer> {
+        self.tcp_lb.read().clone()
+    }
+
+    pub fn get_udp_lb(&self) -> Arc<LoadBalancer> {
+        self.udp_lb.read().clone()
     }
 
     pub fn get_config(&self) -> Option<ProxyConfig> {
