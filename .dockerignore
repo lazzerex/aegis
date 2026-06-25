@@ -1,0 +1,28 @@
+# Rust build artifacts (largest offender — target/ can be several GB)
+data-plane/target/
+
+# Go build artifacts
+control-plane/aegis-control
+control-plane/proto/*.pb.go
+
+# Git
+.git/
+.gitignore
+
+# Local dev files
+*.md
+prompt.md
+run.md
+TASK.md
+TODO.md
+WORKFLOW.md
+AGENTS.md
+CHANGES.md
+
+# Scripts not needed in image
+scripts/
+
+# Grafana/Prometheus config not needed at build time
+grafana/
+prometheus.yml
+prometheus-alerts.yml
