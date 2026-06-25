@@ -6,7 +6,6 @@ use tokio::net::UdpSocket;
 use tracing::{debug, error, info, warn};
 
 use crate::config::ProxyState;
-use crate::load_balancer::LoadBalancer;
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 const BUFFER_SIZE: usize = 65536;
@@ -98,11 +97,6 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
     let socket = Arc::new(UdpSocket::bind(&config.udp_address).await?);
     info!("UDP proxy listening on {}", config.udp_address);
 
-    let load_balancer = Arc::new(LoadBalancer::new(
-        config.udp_backends.clone(),
-        config.algorithm.clone(),
-    ));
-
     // Session tracking with NAT mapping
     let sessions: Arc<DashMap<String, UdpSession>> = Arc::new(DashMap::new());
     // Reverse mapping for backend -> client lookups
@@ -164,8 +158,6 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
         let socket_clone = socket.clone();
         let sessions_clone = sessions.clone();
         let reverse_sessions_clone = reverse_sessions.clone();
-        let lb_clone = load_balancer.clone();
-
         let state_clone = state.clone();
         
         // Process packet asynchronously
@@ -184,14 +176,13 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                         len, peer_addr, client_addr
                     );
 
-                    // Record success for circuit breaker
-                    state_clone.circuit_breaker.record_success(&backend_addr);
+                    state_clone.circuit_breaker.read().record_success(&backend_addr);
 
                     match socket_clone.send_to(&packet, client_addr).await {
                         Ok(_) => {}
                         Err(e) => {
                             error!("Failed to forward to client {}: {}", client_addr, e);
-                            state_clone.circuit_breaker.record_failure(&backend_addr);
+                            state_clone.circuit_breaker.read().record_failure(&backend_addr);
                         }
                     }
                 }
@@ -200,7 +191,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 let client_key = peer_addr.to_string();
 
                 // Check rate limit
-                if !state_clone.rate_limiter.allow_request(Some(&client_key)) {
+                if !state_clone.rate_limiter.read().allow_request(Some(&client_key)) {
                     warn!("Rate limit exceeded for UDP client: {}", peer_addr);
                     state_clone.metrics.record_rate_limit_denied();
                     return;
@@ -211,8 +202,9 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 // Get or create session with NAT mapping
                 let (backend_socket_addr, client_addr, backend_addr_str) = {
                     let state_for_session = state_clone.clone();
+                    let lb = state_clone.get_udp_lb();
                     let mut session = sessions_clone.entry(client_key.clone()).or_insert_with(|| {
-                        let backend = lb_clone
+                        let backend = lb
                             .select_backend_with_context(Some(&peer_addr.ip().to_string()))
                             .expect("No healthy UDP backends available");
 
@@ -238,7 +230,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 };
 
                 // Check circuit breaker for this backend
-                if !state_clone.circuit_breaker.allow_request(&backend_addr_str) {
+                if !state_clone.circuit_breaker.read().allow_request(&backend_addr_str) {
                     warn!(
                         "Circuit breaker open for UDP backend: {}, dropping packet from {}",
                         backend_addr_str, client_addr
@@ -259,13 +251,12 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 // Forward packet to backend
                 match socket_clone.send_to(&packet, backend_socket_addr).await {
                     Ok(_) => {
-                        // Record success for circuit breaker
-                        state_clone.circuit_breaker.record_success(&backend_addr_str);
+                        state_clone.circuit_breaker.read().record_success(&backend_addr_str);
                         state_clone.metrics.record_backend_request(&backend_addr_str);
                     }
                     Err(e) => {
                         error!("Failed to forward to backend {}: {}", backend_socket_addr, e);
-                        state_clone.circuit_breaker.record_failure(&backend_addr_str);
+                        state_clone.circuit_breaker.read().record_failure(&backend_addr_str);
                         state_clone.metrics.record_backend_failure(&backend_addr_str);
                     }
                 }
