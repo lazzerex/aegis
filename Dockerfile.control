@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -10,9 +10,9 @@ RUN apk add --no-cache \
     make \
     ca-certificates
 
-# Install Go protobuf plugins (pinned versions for compatibility)
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.32.0 && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+# Install Go protobuf plugins (pinned to match local toolchain)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.0
 
 # Copy proto source file
 COPY proto/ ./proto/
