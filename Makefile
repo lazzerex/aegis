@@ -11,6 +11,7 @@
 PROTO_DIR    := proto
 GO_OUT       := control-plane/proto
 CONTROL_BIN  := control-plane/aegis-control
+CTL_BIN      := control-plane/aegis-ctl
 DATA_BIN     := data-plane/target/release/aegis-data
 
 # ── Top-level aliases ─────────────────────────────────────────────────────────
@@ -35,7 +36,9 @@ proto:
 
 build-go: proto
 	cd control-plane && go mod tidy && go build -o aegis-control ./cmd/main.go
+	cd control-plane && go build -o aegis-ctl ./cmd/aegis-ctl/main.go
 	@echo "control plane: $(CONTROL_BIN)"
+	@echo "ctl:           $(CTL_BIN)"
 
 build-rust:
 	cd data-plane && cargo build --release
