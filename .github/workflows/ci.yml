@@ -27,17 +27,21 @@ jobs:
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.0
-          cd control-plane && go mod tidy
-          cd control-plane/proto && go mod tidy
 
       - name: Generate proto
         run: make proto
 
+      - name: Download Go modules
+        working-directory: control-plane
+        run: go mod download
+
       - name: Go lint
-        run: cd control-plane && go vet ./...
+        working-directory: control-plane
+        run: go vet ./...
 
       - name: Go test
-        run: cd control-plane && go test ./...
+        working-directory: control-plane
+        run: go test ./...
 
   test-rust:
     name: Rust test & lint
@@ -66,7 +70,9 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Rust clippy
-        run: cd data-plane && cargo clippy -- -D warnings
+        working-directory: data-plane
+        run: cargo clippy
 
       - name: Rust test
-        run: cd data-plane && cargo test
+        working-directory: data-plane
+        run: cargo test
