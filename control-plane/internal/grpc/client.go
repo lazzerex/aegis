@@ -22,10 +22,8 @@ type Client struct {
 }
 
 func NewClient(address string, logger *zap.Logger) (*Client, error) {
-	conn, err := grpc.Dial(address,
+	conn, err := grpc.NewClient(address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-		grpc.WithTimeout(10*time.Second),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to data plane: %w", err)
