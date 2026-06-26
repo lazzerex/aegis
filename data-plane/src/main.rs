@@ -71,23 +71,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Start metrics streaming
-    let metrics_state = proxy_state.clone();
-    let metrics_handle = tokio::spawn(async move {
-        metrics::stream_metrics(metrics_state).await;
-    });
-
     // Wait for shutdown signal
     info!("Proxy data plane ready");
     signal::ctrl_c().await?;
     info!("Shutdown signal received, draining connections...");
 
-    // Graceful shutdown
-    proxy_state.drain_connections().await;
+    // Graceful shutdown — 30s timeout prevents hang if connections stall
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        proxy_state.drain_connections(),
+    )
+    .await
+    .ok();
 
     // Wait for all tasks to complete (with timeout)
     let _ = tokio::time::timeout(tokio::time::Duration::from_secs(30), async {
-        let _ = tokio::join!(grpc_handle, tcp_handle, udp_handle, metrics_handle);
+        let _ = tokio::join!(grpc_handle, tcp_handle, udp_handle);
     })
     .await;
 
