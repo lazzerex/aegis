@@ -1,34 +1,7 @@
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use tracing::debug;
 
-use crate::config::ProxyState;
-
-pub async fn stream_metrics(state: Arc<ProxyState>) {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-
-    loop {
-        interval.tick().await;
-
-        let active_connections = state.active_connection_count() as i64;
-        let metrics = state.get_metrics();
-
-        debug!(
-            "Metrics: active_connections={}, total_tcp={}, total_udp={}, total_bytes_sent={}, total_bytes_received={}",
-            active_connections,
-            metrics.tcp_connections.load(Ordering::Relaxed),
-            metrics.udp_sessions.load(Ordering::Relaxed),
-            metrics.bytes_sent.load(Ordering::Relaxed),
-            metrics.bytes_received.load(Ordering::Relaxed)
-        );
-
-        // TODO: Send metrics via gRPC stream to control plane
-    }
-}
-
-/// Comprehensive metrics collector for proxy operations
 pub struct MetricsCollector {
     // Connection metrics
     pub tcp_connections: AtomicU64,
