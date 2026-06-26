@@ -96,6 +96,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.control
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "9090:9090"   # Admin API
       - "9091:9091"   # Metrics
@@ -137,9 +140,12 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3030:3000"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana-storage:/var/lib/grafana
