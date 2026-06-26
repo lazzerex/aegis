@@ -1,14 +1,29 @@
-# Aegis
+<div align="center">
 
-<p align="center">
+<h1>Aegis</h1>
+
+<p>High-performance L4 network proxy: Go control plane + Rust data plane</p>
+
 <img width="667" height="374" alt="aegis" src="https://github.com/user-attachments/assets/f5828a33-c3ca-4ba6-93e9-5f722cc5219e" />
-</p>
 
+<br /><br />
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.22%2B-blue)](https://golang.org)
-[![Rust Version](https://img.shields.io/badge/Rust-1.75%2B-orange)](https://www.rust-lang.org)
+[![GitHub Stars](https://img.shields.io/github/stars/lazzerex/aegis?style=flat)](https://github.com/lazzerex/aegis/stargazers)
+[![CI](https://img.shields.io/github/actions/workflow/status/lazzerex/aegis/ci.yml?branch=main&label=CI)](https://github.com/lazzerex/aegis/actions)
 
+[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![gRPC](https://img.shields.io/badge/gRPC-control%2Fdata-00D2FF)](https://grpc.io)
+[![Protobuf](https://img.shields.io/badge/Protobuf-wire%20format-3F51B5?logo=google&logoColor=white)](https://protobuf.dev)
+[![Tokio](https://img.shields.io/badge/Tokio-async%20runtime-3B48CC)](https://tokio.rs)
+[![Chi](https://img.shields.io/badge/Chi-router-00ADD8)](https://github.com/go-chi/chi)
+[![Zap](https://img.shields.io/badge/Zap-logging-FF6B00)](https://github.com/uber-go/zap)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+[![Prometheus](https://img.shields.io/badge/Prometheus-metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io)
+[![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white)](https://grafana.com)
+
+</div>
 
 Aegis is a high-performance network proxy that combines Go's control plane with Rust's data plane for optimal performance and maintainability.
 
@@ -55,28 +70,47 @@ Aegis is designed for production use in microservice architectures and backend i
 
 ## Quick Start
 
+### Docker (Recommended)
+
+Runs the full stack (proxy, test backends, Prometheus, Grafana) in one command. No local Go/Rust install needed.
+
 ```bash
-# Clone and build
 git clone https://github.com/lazzerex/aegis.git
 cd aegis
-make all
+docker-compose up --build -d
 
-# Start test backends
-./scripts/test-proxy.sh start
+# Test the proxy
+curl http://localhost:8080/api/test
 
-# Run Aegis (in separate terminals)
-# Terminal 1: Data plane
+# Admin API
+curl http://localhost:9090/health
+
+# Grafana: http://localhost:3030  (admin / admin)
+# Prometheus: http://localhost:9092
+```
+
+### Local Development
+
+Requires Go 1.25+, Rust 1.88+, and protoc.
+
+```bash
+git clone https://github.com/lazzerex/aegis.git
+cd aegis
+make all                          # builds proto + control plane + data plane
+
+# Terminal 1: data plane
 make run-data
 
-# Terminal 2: Control plane
+# Terminal 2: control plane
 make run-control
 
-# Test it
+# Terminal 3: test
+./scripts/test-proxy.sh start     # start test backends
 ./scripts/test-proxy.sh test-proxy
-
-# Stop test backends
 ./scripts/test-proxy.sh stop
 ```
+
+> For the complete Docker Compose service list and port reference, see the [Docker Compose](#docker-compose) section below.
 
 ## Features
 
@@ -104,7 +138,9 @@ make run-control
 ### Coming Soon
 - Distributed tracing with OpenTelemetry
 - HTTP/2 support and WebSocket proxying
-- Hot configuration reload without dropping connections
+- Zero-downtime config reload (preserve existing connections)
+- Admin API authentication
+- Dynamic backend management API
 
 ## Architecture
 
@@ -190,8 +226,8 @@ make run-control
 
 ### Prerequisites
 
-- **Go** 1.22+ 
-- **Rust** 1.75+
+- **Go** 1.25+
+- **Rust** 1.88+
 - **Protocol Buffers** compiler (protoc)
 - **Make**
 - **Docker** (optional, for containerized deployment)
@@ -206,10 +242,10 @@ sudo apt install -y protobuf-compiler
 
 # Install Go (if not installed)
 cd /tmp
-wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
-rm go1.22.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
+rm go1.25.0.linux-amd64.tar.gz
 
 # Add to PATH
 echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
@@ -1036,7 +1072,6 @@ aegis/
 │   │   ├── load_balancer.rs # Load balancing algorithms
 │   │   ├── rate_limiter.rs  # Rate limiting
 │   │   ├── circuit_breaker.rs # Circuit breaker
-│   │   ├── connection.rs    # Connection management
 │   │   ├── config.rs        # Configuration structures
 │   │   └── metrics.rs       # Metrics collection
 │   ├── target/release/
@@ -1148,7 +1183,12 @@ protoc-gen-go --version
 - [x] UDP proxy with NAT
 - [x] Rate limiting
 - [x] Circuit breaking
-- [ ] Hot reload without connection drops
+- [x] Configuration hot reload (`POST /reload`)
+- [x] Session affinity via consistent hashing
+- [x] Read timeout enforcement
+- [ ] Zero-downtime reload (preserve active connections)
+- [ ] Admin API authentication
+- [ ] Dynamic backend management API
 - [ ] HTTP/2 support
 - [ ] Distributed tracing
 
