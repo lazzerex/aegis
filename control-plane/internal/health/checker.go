@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -36,9 +37,36 @@ func (c *Checker) Start() {
 	c.logger.Info("Starting health checker")
 
 	for _, backend := range c.config.Proxy.Backends {
-		c.healthState[backend.Address] = true // Assume healthy initially
+		c.healthState[backend.Address] = true
 		c.wg.Add(1)
 		go c.checkBackend(backend)
+	}
+	for _, backend := range c.config.Proxy.UdpBackends {
+		c.healthState[backend.Address] = true
+		c.wg.Add(1)
+		go c.checkUDPBackend(backend)
+	}
+}
+
+func (c *Checker) Reload(cfg *config.Config) {
+	close(c.stopChan)
+	c.wg.Wait()
+
+	c.mu.Lock()
+	c.stopChan = make(chan struct{})
+	c.config = cfg
+	c.healthState = make(map[string]bool)
+	c.mu.Unlock()
+
+	for _, backend := range cfg.Proxy.Backends {
+		c.healthState[backend.Address] = true
+		c.wg.Add(1)
+		go c.checkBackend(backend)
+	}
+	for _, backend := range cfg.Proxy.UdpBackends {
+		c.healthState[backend.Address] = true
+		c.wg.Add(1)
+		go c.checkUDPBackend(backend)
 	}
 }
 
@@ -106,33 +134,58 @@ func (c *Checker) performHealthCheck(client *http.Client, backend config.Backend
 	return healthy
 }
 
+func (c *Checker) checkUDPBackend(backend config.Backend) {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(backend.HealthCheck.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ticker.C:
+			healthy := c.performTCPProbe(backend)
+			c.updateHealthState(backend.Address, healthy)
+		}
+	}
+}
+
+func (c *Checker) performTCPProbe(backend config.Backend) bool {
+	conn, err := net.DialTimeout("tcp", backend.Address, backend.HealthCheck.Timeout)
+	if err != nil {
+		c.logger.Warn("UDP backend TCP probe failed",
+			zap.String("backend", backend.Address),
+			zap.Error(err))
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func (c *Checker) updateHealthState(address string, healthy bool) {
 	c.mu.Lock()
 	previousState := c.healthState[address]
 	c.healthState[address] = healthy
 	c.mu.Unlock()
 
-	// If state changed, update data plane
 	if previousState != healthy {
 		c.logger.Info("Backend health state changed",
 			zap.String("backend", address),
 			zap.Bool("healthy", healthy))
 
-		// Reload backends with updated health state
-		backends := make([]config.Backend, 0, len(c.config.Proxy.Backends))
 		c.mu.RLock()
+		backends := make([]config.Backend, 0, len(c.config.Proxy.Backends))
 		for _, backend := range c.config.Proxy.Backends {
-			// Copy backend and update health state
-			backendCopy := backend
-			if state, exists := c.healthState[backend.Address]; exists {
-				// Health state is tracked separately and sent to data plane
-				_ = state
-			}
-			backends = append(backends, backendCopy)
+			backends = append(backends, backend)
+		}
+		healthState := make(map[string]bool, len(c.healthState))
+		for k, v := range c.healthState {
+			healthState[k] = v
 		}
 		c.mu.RUnlock()
 
-		if err := c.grpcClient.ReloadBackendsWithHealth(backends, c.healthState); err != nil {
+		if err := c.grpcClient.ReloadBackendsWithHealth(backends, healthState); err != nil {
 			c.logger.Error("Failed to reload backends", zap.Error(err))
 		}
 	}
