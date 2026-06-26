@@ -43,8 +43,8 @@ func (s *Server) Start(address string) error {
 	// Routes
 	r.Get("/health", s.handleHealth)
 	r.Get("/status", s.handleStatus)
-	r.Post("/reload", s.handleReload)
-	r.Post("/drain", s.handleDrain)
+	r.With(s.requireToken).Post("/reload", s.handleReload)
+	r.With(s.requireToken).Post("/drain", s.handleDrain)
 
 	s.server = &http.Server{
 		Addr:    address,
@@ -126,4 +126,18 @@ func (s *Server) handleDrain(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) requireToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.config.Admin.APIToken == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+s.config.Admin.APIToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
