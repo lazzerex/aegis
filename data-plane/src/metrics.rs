@@ -8,23 +8,23 @@ pub struct MetricsCollector {
     pub udp_sessions: AtomicU64,
     pub active_tcp_connections: AtomicU64,
     pub active_udp_sessions: AtomicU64,
-    
+
     // Bandwidth metrics
     pub bytes_sent: AtomicU64,
     pub bytes_received: AtomicU64,
     pub packets_sent: AtomicU64,
     pub packets_received: AtomicU64,
-    
+
     // Performance metrics
     latency_samples: RwLock<Vec<f64>>,
-    
+
     // Per-backend metrics
     backend_metrics: RwLock<HashMap<String, BackendMetrics>>,
-    
+
     // Rate limiting metrics
     pub rate_limit_allowed: AtomicU64,
     pub rate_limit_denied: AtomicU64,
-    
+
     // Circuit breaker metrics
     pub circuit_breaker_open: AtomicU64,
     pub circuit_breaker_half_open: AtomicU64,
@@ -124,7 +124,7 @@ impl MetricsCollector {
     pub fn record_latency(&self, duration_ms: f64) {
         let mut samples = self.latency_samples.write();
         samples.push(duration_ms);
-        
+
         // Keep only last 1000 samples
         let len = samples.len();
         if len > 1000 {
@@ -134,7 +134,7 @@ impl MetricsCollector {
 
     pub fn get_latency_stats(&self) -> LatencyStats {
         let samples = self.latency_samples.read();
-        
+
         if samples.is_empty() {
             return LatencyStats::default();
         }
@@ -216,7 +216,8 @@ impl MetricsCollector {
     }
 
     pub fn record_circuit_breaker_half_open(&self) {
-        self.circuit_breaker_half_open.fetch_add(1, Ordering::Relaxed);
+        self.circuit_breaker_half_open
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     // Get summary for logging/monitoring

@@ -64,7 +64,7 @@ async fn handle_connection(
         state.metrics.record_rate_limit_denied();
         return Err("Rate limit exceeded".into());
     }
-    
+
     state.metrics.record_rate_limit_allowed();
     state.metrics.record_tcp_connection();
 
@@ -114,21 +114,33 @@ async fn handle_connection(
     let mut backend_stream = match backend_result {
         Ok(Ok(stream)) => {
             let latency = start_time.elapsed().as_secs_f64() * 1000.0;
-            debug!("Connected to backend {} in {:.2}ms", backend.address, latency);
-            state.circuit_breaker.read().record_success(&backend.address);
+            debug!(
+                "Connected to backend {} in {:.2}ms",
+                backend.address, latency
+            );
+            state
+                .circuit_breaker
+                .read()
+                .record_success(&backend.address);
             state.metrics.record_backend_request(&backend.address);
             state.metrics.record_latency(latency);
             stream
         }
         Ok(Err(e)) => {
             error!("Failed to connect to backend {}: {}", backend.address, e);
-            state.circuit_breaker.read().record_failure(&backend.address);
+            state
+                .circuit_breaker
+                .read()
+                .record_failure(&backend.address);
             state.metrics.record_backend_failure(&backend.address);
             return Err(e.into());
         }
         Err(_) => {
             error!("Timeout connecting to backend {}", backend.address);
-            state.circuit_breaker.read().record_failure(&backend.address);
+            state
+                .circuit_breaker
+                .read()
+                .record_failure(&backend.address);
             state.metrics.record_backend_failure(&backend.address);
             return Err("Connection timeout".into());
         }
@@ -137,7 +149,7 @@ async fn handle_connection(
     // Split streams for bidirectional copying
     let (mut client_read, mut client_write) = client.split();
     let (mut backend_read, mut backend_write) = backend_stream.split();
-    
+
     let backend_addr_clone = backend.address.clone();
     let state_clone = state.clone();
 
@@ -152,7 +164,9 @@ async fn handle_connection(
             };
 
             state_clone.metrics.record_bytes_sent(n as u64);
-            state_clone.metrics.record_backend_bytes_sent(&backend_addr_clone, n as u64);
+            state_clone
+                .metrics
+                .record_backend_bytes_sent(&backend_addr_clone, n as u64);
             backend_write.write_all(&buf[..n]).await?;
         }
     };
@@ -170,7 +184,9 @@ async fn handle_connection(
             };
 
             state_clone2.metrics.record_bytes_received(n as u64);
-            state_clone2.metrics.record_backend_bytes_received(&backend_addr_clone2, n as u64);
+            state_clone2
+                .metrics
+                .record_backend_bytes_received(&backend_addr_clone2, n as u64);
             client_write.write_all(&buf[..n]).await?;
         }
     };
@@ -200,7 +216,10 @@ async fn handle_connection(
     };
 
     if connection_ok {
-        state.circuit_breaker.read().record_success(&backend.address);
+        state
+            .circuit_breaker
+            .read()
+            .record_success(&backend.address);
     }
     state.metrics.close_tcp_connection();
     debug!("Connection closed");

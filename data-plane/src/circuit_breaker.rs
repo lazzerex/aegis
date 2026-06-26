@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 /// Circuit breaker states
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircuitState {
-    Closed,      // Normal operation, requests allowed
-    Open,        // Failing, requests blocked
-    HalfOpen,    // Testing if backend recovered
+    Closed,   // Normal operation, requests allowed
+    Open,     // Failing, requests blocked
+    HalfOpen, // Testing if backend recovered
 }
 
 /// Circuit breaker for individual backends

@@ -34,7 +34,7 @@ impl UdpSession {
         // Record new UDP session
         state.metrics.record_udp_session();
         state.metrics.record_backend_connection(&backend_addr);
-        
+
         Self {
             backend_addr,
             backend_socket_addr,
@@ -60,22 +60,26 @@ impl UdpSession {
         self.bytes_sent += bytes;
         self.packets_sent += 1;
         self.update_activity();
-        
+
         // Update metrics
         self.state.metrics.record_bytes_sent(bytes);
         self.state.metrics.record_packet_sent();
-        self.state.metrics.record_backend_bytes_sent(&self.backend_addr, bytes);
+        self.state
+            .metrics
+            .record_backend_bytes_sent(&self.backend_addr, bytes);
     }
 
     fn record_received(&mut self, bytes: u64) {
         self.bytes_received += bytes;
         self.packets_received += 1;
         self.update_activity();
-        
+
         // Update metrics
         self.state.metrics.record_bytes_received(bytes);
         self.state.metrics.record_packet_received();
-        self.state.metrics.record_backend_bytes_received(&self.backend_addr, bytes);
+        self.state
+            .metrics
+            .record_backend_bytes_received(&self.backend_addr, bytes);
     }
 }
 
@@ -159,7 +163,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
         let sessions_clone = sessions.clone();
         let reverse_sessions_clone = reverse_sessions.clone();
         let state_clone = state.clone();
-        
+
         // Process packet asynchronously
         tokio::spawn(async move {
             // Check if this is a response from a backend
@@ -176,13 +180,19 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                         len, peer_addr, client_addr
                     );
 
-                    state_clone.circuit_breaker.read().record_success(&backend_addr);
+                    state_clone
+                        .circuit_breaker
+                        .read()
+                        .record_success(&backend_addr);
 
                     match socket_clone.send_to(&packet, client_addr).await {
                         Ok(_) => {}
                         Err(e) => {
                             error!("Failed to forward to client {}: {}", client_addr, e);
-                            state_clone.circuit_breaker.read().record_failure(&backend_addr);
+                            state_clone
+                                .circuit_breaker
+                                .read()
+                                .record_failure(&backend_addr);
                         }
                     }
                 }
@@ -191,12 +201,16 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 let client_key = peer_addr.to_string();
 
                 // Check rate limit
-                if !state_clone.rate_limiter.read().allow_request(Some(&client_key)) {
+                if !state_clone
+                    .rate_limiter
+                    .read()
+                    .allow_request(Some(&client_key))
+                {
                     warn!("Rate limit exceeded for UDP client: {}", peer_addr);
                     state_clone.metrics.record_rate_limit_denied();
                     return;
                 }
-                
+
                 state_clone.metrics.record_rate_limit_allowed();
 
                 // Get or create session with NAT mapping
@@ -226,17 +240,27 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                     });
 
                     session.record_sent(len as u64);
-                    (session.backend_socket_addr, session.client_addr, session.backend_addr.clone())
+                    (
+                        session.backend_socket_addr,
+                        session.client_addr,
+                        session.backend_addr.clone(),
+                    )
                 };
 
                 // Check circuit breaker for this backend
-                if !state_clone.circuit_breaker.read().allow_request(&backend_addr_str) {
+                if !state_clone
+                    .circuit_breaker
+                    .read()
+                    .allow_request(&backend_addr_str)
+                {
                     warn!(
                         "Circuit breaker open for UDP backend: {}, dropping packet from {}",
                         backend_addr_str, client_addr
                     );
                     state_clone.metrics.record_circuit_breaker_open();
-                    state_clone.metrics.record_backend_failure(&backend_addr_str);
+                    state_clone
+                        .metrics
+                        .record_backend_failure(&backend_addr_str);
                     return;
                 }
 
@@ -251,13 +275,26 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
                 // Forward packet to backend
                 match socket_clone.send_to(&packet, backend_socket_addr).await {
                     Ok(_) => {
-                        state_clone.circuit_breaker.read().record_success(&backend_addr_str);
-                        state_clone.metrics.record_backend_request(&backend_addr_str);
+                        state_clone
+                            .circuit_breaker
+                            .read()
+                            .record_success(&backend_addr_str);
+                        state_clone
+                            .metrics
+                            .record_backend_request(&backend_addr_str);
                     }
                     Err(e) => {
-                        error!("Failed to forward to backend {}: {}", backend_socket_addr, e);
-                        state_clone.circuit_breaker.read().record_failure(&backend_addr_str);
-                        state_clone.metrics.record_backend_failure(&backend_addr_str);
+                        error!(
+                            "Failed to forward to backend {}: {}",
+                            backend_socket_addr, e
+                        );
+                        state_clone
+                            .circuit_breaker
+                            .read()
+                            .record_failure(&backend_addr_str);
+                        state_clone
+                            .metrics
+                            .record_backend_failure(&backend_addr_str);
                     }
                 }
             }

@@ -144,7 +144,11 @@ impl LoadBalancer {
     }
 
     /// Consistent hashing for session affinity
-    fn consistent_hash(&self, backends: &[&BackendWithStats], context: Option<&str>) -> Option<Backend> {
+    fn consistent_hash(
+        &self,
+        backends: &[&BackendWithStats],
+        context: Option<&str>,
+    ) -> Option<Backend> {
         if backends.is_empty() {
             return None;
         }
