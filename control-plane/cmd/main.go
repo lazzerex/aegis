@@ -64,14 +64,10 @@ func main() {
 	defer healthChecker.Stop()
 
 	// Start metrics streaming from data plane
-	go func() {
-		if err := grpcClient.StreamMetrics(metricsCollector); err != nil {
-			logger.Error("Metrics streaming error", zap.Error(err))
-		}
-	}()
+	grpcClient.StreamMetrics(metricsCollector)
 
 	// Initialize REST API
-	apiServer := api.NewServer(cfg, grpcClient, healthChecker, logger)
+	apiServer := api.NewServer(cfg, *configFile, grpcClient, healthChecker, logger)
 
 	// Start API server
 	go func() {
