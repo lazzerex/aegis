@@ -1,47 +1,26 @@
-FROM rust:1.85-alpine AS builder
-
+FROM rust:1.88-alpine AS chef
+RUN apk add --no-cache musl-dev protobuf protobuf-dev ca-certificates && \
+    cargo install cargo-chef --locked
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache \
-    musl-dev \
-    protobuf \
-    protobuf-dev \
-    ca-certificates
+FROM chef AS planner
+COPY data-plane/ .
+COPY proto/ /proto/
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Copy cargo files first for caching
-COPY data-plane/Cargo.toml ./
-COPY data-plane/build.rs ./
-
-# Copy proto files to expected location
-COPY proto/ ../proto/
-
-# Create dummy main.rs to cache dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
-
-# Copy actual source
-COPY data-plane/src ./src
-
-# Build with optimizations
+FROM chef AS builder
+COPY proto/ /proto/
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+COPY data-plane/ .
 RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && \
     strip target/x86_64-unknown-linux-musl/release/aegis-data
 
-# Final stage
 FROM alpine:latest
-
 RUN apk --no-cache add ca-certificates libgcc busybox-extras
-
 WORKDIR /root/
-
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/aegis-data .
-
 EXPOSE 50051 8080 8081
-
-# Health check via gRPC
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD nc -z localhost 50051 || exit 1
-
 ENTRYPOINT ["./aegis-data"]
