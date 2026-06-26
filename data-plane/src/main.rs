@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info};
-use tracing_subscriber;
 
 mod circuit_breaker;
 mod config;
