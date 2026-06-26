@@ -121,25 +121,21 @@ impl LoadBalancer {
             return None;
         }
 
-        // Calculate total weight
-        let total_weight: i32 = backends.iter().map(|b| b.backend.weight).sum();
+        let total_weight: usize = backends.iter().map(|b| b.backend.weight as usize).sum();
         if total_weight == 0 {
             return self.round_robin(backends);
         }
 
-        // Select based on weight distribution
-        let mut counter = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) as i32;
-        counter %= total_weight;
+        let counter = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % total_weight;
 
-        let mut cumulative = 0;
+        let mut cumulative: usize = 0;
         for backend in backends {
-            cumulative += backend.backend.weight;
+            cumulative += backend.backend.weight as usize;
             if counter < cumulative {
                 return Some(backend.backend.clone());
             }
         }
 
-        // Fallback to round-robin
         self.round_robin(backends)
     }
 
@@ -188,16 +184,28 @@ impl LoadBalancer {
         }
     }
 
-    /// Update backend list from control plane
+    /// Update backend list from control plane, preserving active connection counts
     pub fn update_backends(&self, backends: Vec<Backend>) {
-        let backends_with_stats = backends
-            .into_iter()
-            .map(|b| BackendWithStats {
-                backend: b,
-                active_connections: AtomicU64::new(0),
+        let mut current = self.backends.write();
+        let existing: HashMap<String, u64> = current
+            .iter()
+            .map(|b| {
+                (
+                    b.backend.address.clone(),
+                    b.active_connections.load(Ordering::Relaxed),
+                )
             })
             .collect();
-        *self.backends.write() = backends_with_stats;
+        *current = backends
+            .into_iter()
+            .map(|b| {
+                let conns = existing.get(&b.address).copied().unwrap_or(0);
+                BackendWithStats {
+                    backend: b,
+                    active_connections: AtomicU64::new(conns),
+                }
+            })
+            .collect();
     }
 
     /// Get connection statistics for monitoring
