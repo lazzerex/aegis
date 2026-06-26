@@ -77,9 +77,14 @@ async fn handle_connection(
         conn_id,
     };
 
-    // Select backend with consistent hashing support
+    // Select backend; only pass client IP for consistent hashing when session_affinity enabled
+    let context = if config.session_affinity {
+        Some(client_addr.ip().to_string())
+    } else {
+        None
+    };
     let backend = load_balancer
-        .select_backend_with_context(Some(&client_addr.ip().to_string()))
+        .select_backend_with_context(context.as_deref())
         .ok_or("No healthy backends available")?;
 
     // Check circuit breaker
@@ -147,6 +152,13 @@ async fn handle_connection(
     };
 
     // Split streams for bidirectional copying
+    let read_timeout = if config.read_timeout_secs > 0 {
+        Some(tokio::time::Duration::from_secs(
+            config.read_timeout_secs as u64,
+        ))
+    } else {
+        None
+    };
     let (mut client_read, mut client_write) = client.split();
     let (mut backend_read, mut backend_write) = backend_stream.split();
 
@@ -154,13 +166,26 @@ async fn handle_connection(
     let state_clone = state.clone();
 
     // Bidirectional copy
-    let client_to_backend = async {
+    let client_to_backend = async move {
         let mut buf = vec![0u8; 8192];
         loop {
-            let n = match client_read.read(&mut buf).await {
-                Ok(0) => return Ok::<_, std::io::Error>(()),
-                Ok(n) => n,
-                Err(e) => return Err(e),
+            let n = match read_timeout {
+                Some(t) => match tokio::time::timeout(t, client_read.read(&mut buf)).await {
+                    Ok(Ok(0)) => return Ok::<_, std::io::Error>(()),
+                    Ok(Ok(n)) => n,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "read timeout",
+                        ))
+                    }
+                },
+                None => match client_read.read(&mut buf).await {
+                    Ok(0) => return Ok::<_, std::io::Error>(()),
+                    Ok(n) => n,
+                    Err(e) => return Err(e),
+                },
             };
 
             state_clone.metrics.record_bytes_sent(n as u64);
@@ -174,13 +199,26 @@ async fn handle_connection(
     let backend_addr_clone2 = backend.address.clone();
     let state_clone2 = state.clone();
 
-    let backend_to_client = async {
+    let backend_to_client = async move {
         let mut buf = vec![0u8; 8192];
         loop {
-            let n = match backend_read.read(&mut buf).await {
-                Ok(0) => return Ok::<_, std::io::Error>(()),
-                Ok(n) => n,
-                Err(e) => return Err(e),
+            let n = match read_timeout {
+                Some(t) => match tokio::time::timeout(t, backend_read.read(&mut buf)).await {
+                    Ok(Ok(0)) => return Ok::<_, std::io::Error>(()),
+                    Ok(Ok(n)) => n,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "read timeout",
+                        ))
+                    }
+                },
+                None => match backend_read.read(&mut buf).await {
+                    Ok(0) => return Ok::<_, std::io::Error>(()),
+                    Ok(n) => n,
+                    Err(e) => return Err(e),
+                },
             };
 
             state_clone2.metrics.record_bytes_received(n as u64);
