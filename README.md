@@ -77,6 +77,7 @@ Runs the full stack (proxy, test backends, Prometheus, Grafana) in one command. 
 ```bash
 git clone https://github.com/lazzerex/aegis.git
 cd aegis
+cp .env.example .env          # configure credentials (defaults work out of the box)
 docker-compose up --build -d
 
 # Test the proxy
@@ -85,7 +86,7 @@ curl http://localhost:8080/api/test
 # Admin API
 curl http://localhost:9090/health
 
-# Grafana: http://localhost:3030  (admin / admin)
+# Grafana: http://localhost:3030  (admin / admin by default)
 # Prometheus: http://localhost:9092
 ```
 
