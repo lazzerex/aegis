@@ -172,28 +172,28 @@ func (c *Client) DrainConnections(ctx context.Context, timeoutSeconds int) error
 	return nil
 }
 
-func (c *Client) StreamMetrics(collector *metrics.Collector) error {
-	stream, err := c.client.StreamMetrics(context.Background(), &emptypb.Empty{})
-	if err != nil {
-		return fmt.Errorf("failed to start metrics stream: %w", err)
-	}
-
-	// Receive metrics from the data plane and update Prometheus collector
+func (c *Client) StreamMetrics(collector *metrics.Collector) {
 	go func() {
 		for {
-			metricsData, err := stream.Recv()
-			if err == io.EOF {
-				c.logger.Info("Metrics stream closed")
-				return
-			}
+			stream, err := c.client.StreamMetrics(context.Background(), &emptypb.Empty{})
 			if err != nil {
-				c.logger.Error("Error receiving metrics data", zap.Error(err))
-				return
+				c.logger.Error("Failed to start metrics stream, retrying in 5s", zap.Error(err))
+				time.Sleep(5 * time.Second)
+				continue
 			}
-
-			collector.UpdateFromProto(metricsData)
+			for {
+				metricsData, err := stream.Recv()
+				if err == io.EOF {
+					c.logger.Info("Metrics stream closed, reconnecting")
+					break
+				}
+				if err != nil {
+					c.logger.Error("Metrics stream error, reconnecting in 5s", zap.Error(err))
+					time.Sleep(5 * time.Second)
+					break
+				}
+				collector.UpdateFromProto(metricsData)
+			}
 		}
 	}()
-
-	return nil
 }
