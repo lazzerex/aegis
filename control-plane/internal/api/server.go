@@ -15,15 +15,17 @@ import (
 
 type Server struct {
 	config        *config.Config
+	configPath    string
 	grpcClient    *grpc.Client
 	healthChecker *health.Checker
 	logger        *zap.Logger
 	server        *http.Server
 }
 
-func NewServer(cfg *config.Config, client *grpc.Client, checker *health.Checker, logger *zap.Logger) *Server {
+func NewServer(cfg *config.Config, configPath string, client *grpc.Client, checker *health.Checker, logger *zap.Logger) *Server {
 	return &Server{
 		config:        cfg,
+		configPath:    configPath,
 		grpcClient:    client,
 		healthChecker: checker,
 		logger:        logger,
@@ -85,21 +87,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
-	// Reload configuration
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(s.configPath)
 	if err != nil {
 		s.logger.Error("Failed to reload config", zap.Error(err))
 		http.Error(w, "Failed to reload configuration", http.StatusInternalServerError)
 		return
 	}
 
-	// Update data plane
 	if err := s.grpcClient.UpdateConfig(cfg); err != nil {
 		s.logger.Error("Failed to update data plane config", zap.Error(err))
 		http.Error(w, "Failed to update data plane", http.StatusInternalServerError)
 		return
 	}
 
+	s.healthChecker.Reload(cfg)
 	s.config = cfg
 
 	response := map[string]interface{}{
