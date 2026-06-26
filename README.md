@@ -136,12 +136,16 @@ make run-control
 - **Structured Logging**: Detailed tracing with configurable log levels
 - **gRPC Communication**: Clean separation between control and data planes
 
+### Management
+- **`aegis-ctl` CLI**: Built-in operator tool for live backend management
+- **Admin API authentication**: Bearer token via `AEGIS_API_TOKEN` env var
+- **Dynamic backend API**: Add/remove backends at runtime without config reload
+
 ### Coming Soon
 - Distributed tracing with OpenTelemetry
 - HTTP/2 support and WebSocket proxying
 - Zero-downtime config reload (preserve existing connections)
-- Admin API authentication
-- Dynamic backend management API
+- Helm chart for Kubernetes deployment
 
 ## Architecture
 
@@ -196,7 +200,7 @@ make run-control
 │                     Go Control Plane                         │
 │  ┌────────────┐  ┌──────────┐  ┌─────────────┐             │
 │  │ Config Mgmt│  │ Health   │  │ Admin API   │             │
-│  │ (Viper)    │  │ Checker  │  │ (Chi Router)│             │
+│  │ (YAML)     │  │ Checker  │  │ (Chi Router)│             │
 │  └────────────┘  └──────────┘  └─────────────┘             │
 │         │              │               │                     │
 │         └──────────────┴───────────────┘                     │
@@ -379,7 +383,7 @@ make run-control
 **Management:**
 - Configure via YAML files (`config.yaml`)
 - Monitor via Prometheus metrics (`:9091/metrics`)
-- Control via Admin API (`:9090`)
+- Control via Admin API (`:9090`) or `aegis-ctl` CLI
 - View dashboards with Grafana (connects to Prometheus)
 
 **No GUI Required** - Aegis is infrastructure software managed through:
@@ -555,6 +559,14 @@ make test             # Run tests
 make fmt              # Format code
 make lint             # Lint code
 make clean            # Clean build artifacts
+
+# aegis-ctl (set AEGIS_URL and AEGIS_API_TOKEN in env)
+aegis-ctl status                            # list backends + health
+aegis-ctl backends add db4.internal:5432    # add backend
+aegis-ctl backends add db4.internal:5432 -w 80  # add with weight
+aegis-ctl backends remove db4.internal:5432 # remove backend
+aegis-ctl reload                            # reload config from disk
+aegis-ctl drain                             # drain connections
 ```
 
 **Default Ports:**
@@ -972,18 +984,35 @@ open http://localhost:3030
 Monitor and control Aegis via the Admin API (port 9090):
 
 ```bash
-# Health status with backend states
+# Health status with backend states (no auth required)
 curl http://localhost:9090/health
 
-# Proxy configuration and status
+# List backends with health state (no auth required)
+curl http://localhost:9090/backends
+
+# Proxy configuration and status (no auth required)
 curl http://localhost:9090/status
 
-# Reload configuration (hot reload)
-curl -X POST http://localhost:9090/reload
+# Add a backend at runtime (auth required)
+curl -X POST http://localhost:9090/backends \
+  -H "Authorization: Bearer $AEGIS_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"address":"db4.internal:5432","weight":100}'
 
-# Drain connections for graceful shutdown
-curl -X POST http://localhost:9090/drain
+# Remove a backend at runtime (auth required)
+curl -X DELETE "http://localhost:9090/backends/db4.internal:5432" \
+  -H "Authorization: Bearer $AEGIS_API_TOKEN"
+
+# Reload configuration from disk (auth required)
+curl -X POST http://localhost:9090/reload \
+  -H "Authorization: Bearer $AEGIS_API_TOKEN"
+
+# Drain connections for graceful shutdown (auth required)
+curl -X POST http://localhost:9090/drain \
+  -H "Authorization: Bearer $AEGIS_API_TOKEN"
 ```
+
+**Authentication:** Set `AEGIS_API_TOKEN` in your `.env` file or environment. When empty, auth is disabled (default for local dev). Read-only endpoints (`/health`, `/status`, `/backends` GET) never require auth.
 
 ### Data Persistence
 
@@ -1053,15 +1082,18 @@ aegis/
 │
 ├── control-plane/           # Go control plane
 │   ├── cmd/
-│   │   └── main.go         # Entry point
+│   │   ├── main.go         # Control plane entry point
+│   │   └── aegis-ctl/      # Operator CLI tool
+│   │       └── main.go
 │   ├── internal/
-│   │   ├── api/            # REST API handlers
-│   │   ├── config/         # Configuration management
+│   │   ├── api/            # REST API handlers + tests
+│   │   ├── config/         # Configuration management + tests
 │   │   ├── grpc/           # gRPC client to data plane
-│   │   ├── health/         # Health checker
+│   │   ├── health/         # Health checker + tests
 │   │   └── metrics/        # Prometheus metrics
 │   ├── proto/              # Generated protobuf code
 │   ├── aegis-control       # Binary (after build)
+│   ├── aegis-ctl           # CLI binary (after build)
 │   └── go.mod
 │
 ├── data-plane/              # Rust data plane
@@ -1095,6 +1127,7 @@ aegis/
 │       ├── dashboards/     # Pre-configured dashboards
 │       └── datasources/    # Datasource configuration
 │
+├── .env.example             # Environment variable template (copy to .env)
 ├── config.yaml              # Local development config (localhost)
 ├── config.docker.yaml       # Docker config (service names)
 ├── docker-compose.yml       # Full stack deployment
@@ -1187,11 +1220,14 @@ protoc-gen-go --version
 - [x] Configuration hot reload (`POST /reload`)
 - [x] Session affinity via consistent hashing
 - [x] Read timeout enforcement
+- [x] Admin API authentication (Bearer token via `AEGIS_API_TOKEN`)
+- [x] Dynamic backend management API (`GET/POST/DELETE /backends`)
+- [x] `aegis-ctl` CLI for live backend management
+- [x] SIGTERM handling for container/Kubernetes graceful shutdown
 - [ ] Zero-downtime reload (preserve active connections)
-- [ ] Admin API authentication
-- [ ] Dynamic backend management API
 - [ ] HTTP/2 support
 - [ ] Distributed tracing
+- [ ] Helm chart for Kubernetes
 
 ## Contributing
 
