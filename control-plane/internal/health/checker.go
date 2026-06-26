@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"github.com/lazzerex/aegis/control-plane/internal/config"
-	"github.com/lazzerex/aegis/control-plane/internal/grpc"
 	"go.uber.org/zap"
 )
 
+type backendReloader interface {
+	ReloadBackendsWithHealth(backends []config.Backend, healthState map[string]bool) error
+}
+
 type Checker struct {
 	config      *config.Config
-	grpcClient  *grpc.Client
+	grpcClient  backendReloader
 	logger      *zap.Logger
 	stopChan    chan struct{}
 	wg          sync.WaitGroup
@@ -23,7 +26,7 @@ type Checker struct {
 	mu          sync.RWMutex
 }
 
-func NewChecker(cfg *config.Config, client *grpc.Client, logger *zap.Logger) *Checker {
+func NewChecker(cfg *config.Config, client backendReloader, logger *zap.Logger) *Checker {
 	return &Checker{
 		config:      cfg,
 		grpcClient:  client,
