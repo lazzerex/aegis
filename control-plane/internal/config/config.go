@@ -69,6 +69,7 @@ type CircuitBreakerConfig struct {
 type AdminConfig struct {
 	APIAddress     string `yaml:"api_address"`
 	MetricsAddress string `yaml:"metrics_address"`
+	APIToken       string `yaml:"api_token"`
 }
 
 type GRPCConfig struct {
@@ -101,6 +102,22 @@ func Load(filename string) (*Config, error) {
 		if cfg.Proxy.Backends[i].HealthCheck.Timeout == 0 {
 			cfg.Proxy.Backends[i].HealthCheck.Timeout = 2 * time.Second
 		}
+	}
+
+	for i := range cfg.Proxy.UdpBackends {
+		if cfg.Proxy.UdpBackends[i].Weight == 0 {
+			cfg.Proxy.UdpBackends[i].Weight = 100
+		}
+		if cfg.Proxy.UdpBackends[i].HealthCheck.Interval == 0 {
+			cfg.Proxy.UdpBackends[i].HealthCheck.Interval = 5 * time.Second
+		}
+		if cfg.Proxy.UdpBackends[i].HealthCheck.Timeout == 0 {
+			cfg.Proxy.UdpBackends[i].HealthCheck.Timeout = 2 * time.Second
+		}
+	}
+
+	if token := os.Getenv("AEGIS_API_TOKEN"); token != "" {
+		cfg.Admin.APIToken = token
 	}
 
 	return &cfg, nil
