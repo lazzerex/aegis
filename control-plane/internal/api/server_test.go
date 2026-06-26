@@ -23,9 +23,9 @@ func setURLParam(ctx context.Context, key, value string) context.Context {
 // ── mocks ────────────────────────────────────────────────────────────────────
 
 type mockGRPC struct {
-	updateErr  error
-	reloadErr  error
-	drainErr   error
+	updateErr   error
+	reloadErr   error
+	drainErr    error
 	reloadCalls int
 }
 
