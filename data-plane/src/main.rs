@@ -4,7 +4,6 @@ use tracing::{error, info};
 
 mod circuit_breaker;
 mod config;
-mod connection;
 mod grpc_server;
 mod load_balancer;
 mod metrics;
