@@ -41,8 +41,7 @@ COPY control-plane/cmd ./cmd
 COPY control-plane/internal ./internal
 
 # Build
-RUN go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o aegis-control ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o aegis-control ./cmd/main.go
 
 # Final stage
 FROM alpine:latest
