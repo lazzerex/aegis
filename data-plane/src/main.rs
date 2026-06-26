@@ -71,7 +71,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for shutdown signal
     info!("Proxy data plane ready");
+
+    #[cfg(unix)]
+    {
+        use signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate())?;
+        tokio::select! {
+            _ = signal::ctrl_c() => {},
+            _ = sigterm.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
     signal::ctrl_c().await?;
+
     info!("Shutdown signal received, draining connections...");
 
     // Graceful shutdown — 30s timeout prevents hang if connections stall
