@@ -2,7 +2,7 @@
 
 <h1>Aegis</h1>
 
-<p>High-performance L4 network proxy: Go control plane + Rust data plane</p>
+<p>A high-performance L4 network proxy, with Go control plane + Rust data plane</p>
 
 <img width="667" height="374" alt="aegis" src="https://github.com/user-attachments/assets/f5828a33-c3ca-4ba6-93e9-5f722cc5219e" />
 
