@@ -35,8 +35,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting gRPC control server on {}", grpc_addr);
 
+    let cert_file = std::env::var("AEGIS_TLS_CERT_FILE").ok();
+    let key_file = std::env::var("AEGIS_TLS_KEY_FILE").ok();
+
+    let tls_identity = match (cert_file, key_file) {
+        (Some(cert_path), Some(key_path)) => {
+            match (std::fs::read(&cert_path), std::fs::read(&key_path)) {
+                (Ok(cert), Ok(key)) => {
+                    info!("TLS enabled for gRPC server");
+                    Some(tonic::transport::Identity::from_pem(cert, key))
+                }
+                _ => {
+                    error!(
+                        "Failed to read TLS cert/key files: cert={}, key={}",
+                        cert_path, key_path
+                    );
+                    return Err("TLS cert/key read failed".into());
+                }
+            }
+        }
+        (Some(_), None) => {
+            return Err(
+                "AEGIS_TLS_CERT_FILE set but AEGIS_TLS_KEY_FILE missing; both required for TLS"
+                    .into(),
+            );
+        }
+        (None, Some(_)) => {
+            return Err(
+                "AEGIS_TLS_KEY_FILE set but AEGIS_TLS_CERT_FILE missing; both required for TLS"
+                    .into(),
+            );
+        }
+        (None, None) => {
+            info!("gRPC running without TLS");
+            None
+        }
+    };
+
     let grpc_handle = tokio::spawn(async move {
-        if let Err(e) = tonic::transport::Server::builder()
+        let mut server = tonic::transport::Server::builder();
+
+        if let Some(identity) = tls_identity {
+            let tls = tonic::transport::ServerTlsConfig::new().identity(identity);
+            server = match server.tls_config(tls) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to configure gRPC TLS: {}", e);
+                    return;
+                }
+            };
+        }
+
+        if let Err(e) = server
             .add_service(grpc_service.into_service())
             .serve(grpc_addr)
             .await
