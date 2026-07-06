@@ -7,7 +7,7 @@ description = "Aegis high-performance data plane"
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
-tonic = "0.10"
+tonic = { version = "0.10", features = ["tls"] }
 prost = "0.12"
 prost-types = "0.12"
 bytes = "1.5"
