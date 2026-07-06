@@ -97,8 +97,7 @@ services:
       context: .
       dockerfile: Dockerfile.control
     env_file:
-      - path: .env
-        required: false
+      - .env
     ports:
       - "9090:9090"   # Admin API
       - "9091:9091"   # Metrics
@@ -141,8 +140,7 @@ services:
     ports:
       - "3030:3000"
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
