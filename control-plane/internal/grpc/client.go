@@ -2,8 +2,11 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/lazzerex/aegis/control-plane/internal/config"
@@ -11,6 +14,7 @@ import (
 	pb "github.com/lazzerex/aegis/control-plane/proto"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -21,10 +25,13 @@ type Client struct {
 	logger *zap.Logger
 }
 
-func NewClient(address string, logger *zap.Logger) (*Client, error) {
-	conn, err := grpc.NewClient(address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+func NewClient(grpcCfg config.GRPCConfig, logger *zap.Logger) (*Client, error) {
+	creds, err := buildTransportCredentials(grpcCfg, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := grpc.NewClient(grpcCfg.ControlPlaneAddress, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to data plane: %w", err)
 	}
@@ -34,6 +41,36 @@ func NewClient(address string, logger *zap.Logger) (*Client, error) {
 		client: pb.NewProxyControlClient(conn),
 		logger: logger,
 	}, nil
+}
+
+func buildTransportCredentials(grpcCfg config.GRPCConfig, logger *zap.Logger) (credentials.TransportCredentials, error) {
+	if grpcCfg.TLSSkipVerify {
+		if grpcCfg.TLSCACert != "" {
+			logger.Warn("grpc tls_skip_verify is set; tls_ca_cert will be ignored")
+		}
+		logger.Warn("gRPC TLS verification disabled (tls_skip_verify=true); do not use in production")
+		return credentials.NewTLS(&tls.Config{ //nolint:gosec
+			InsecureSkipVerify: true,          //nolint:gosec
+			MinVersion:         tls.VersionTLS12,
+		}), nil
+	}
+	if grpcCfg.TLSCACert != "" {
+		caCert, err := os.ReadFile(grpcCfg.TLSCACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read gRPC CA cert %q: %w", grpcCfg.TLSCACert, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse gRPC CA cert %q", grpcCfg.TLSCACert)
+		}
+		logger.Info("gRPC TLS enabled", zap.String("ca_cert", grpcCfg.TLSCACert))
+		return credentials.NewTLS(&tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS12,
+		}), nil
+	}
+	logger.Info("gRPC running without TLS")
+	return insecure.NewCredentials(), nil
 }
 
 func (c *Client) Close() error {
