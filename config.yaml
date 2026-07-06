@@ -54,4 +54,6 @@ admin:
 
 grpc:
   control_plane_address: "localhost:50051"
+  # tls_ca_cert: "/etc/aegis/certs/ca.crt"   # CA cert to verify data plane. Omit for plaintext.
+  # tls_skip_verify: false                    # Dev only: skip TLS verification.
 
