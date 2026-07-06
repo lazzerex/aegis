@@ -74,6 +74,8 @@ type AdminConfig struct {
 
 type GRPCConfig struct {
 	ControlPlaneAddress string `yaml:"control_plane_address"`
+	TLSCACert           string `yaml:"tls_ca_cert"`
+	TLSSkipVerify       bool   `yaml:"tls_skip_verify"`
 }
 
 func Load(filename string) (*Config, error) {
