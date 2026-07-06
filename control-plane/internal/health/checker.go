@@ -82,11 +82,19 @@ func (c *Checker) Stop() {
 func (c *Checker) checkBackend(backend config.Backend) {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(backend.HealthCheck.Interval)
+	interval := backend.HealthCheck.Interval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	timeout := backend.HealthCheck.Timeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
 	client := &http.Client{
-		Timeout: backend.HealthCheck.Timeout,
+		Timeout: timeout,
 	}
 
 	for {
@@ -140,7 +148,11 @@ func (c *Checker) performHealthCheck(client *http.Client, backend config.Backend
 func (c *Checker) checkUDPBackend(backend config.Backend) {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(backend.HealthCheck.Interval)
+	interval := backend.HealthCheck.Interval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
