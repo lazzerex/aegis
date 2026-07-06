@@ -47,7 +47,7 @@ func main() {
 	metricsCollector := metrics.NewCollector()
 
 	// Initialize gRPC client to Rust data plane
-	grpcClient, err := grpc.NewClient(cfg.GRPC.ControlPlaneAddress, logger)
+	grpcClient, err := grpc.NewClient(cfg.GRPC, logger)
 	if err != nil {
 		logger.Fatal("Failed to create gRPC client", zap.Error(err))
 	}
