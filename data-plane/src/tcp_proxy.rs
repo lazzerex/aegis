@@ -1,12 +1,18 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, error, info, warn};
 
+use crate::access_log::AccessLogEntry;
 use crate::config::ProxyState;
+use crate::connection::ConnectionPool;
 use crate::load_balancer::LoadBalancer;
 
-pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    state: Arc<ProxyState>,
+    pool: Arc<ConnectionPool>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = state.get_config().ok_or("Proxy not configured")?;
 
     let listener = TcpListener::bind(&config.tcp_address).await?;
@@ -32,10 +38,17 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
         let state_clone = state.clone();
         let lb_clone = state.get_tcp_lb();
         let config_clone = config.clone();
+        let pool_clone = pool.clone();
 
         tokio::spawn(async move {
-            if let Err(e) =
-                handle_connection(client_socket, state_clone, lb_clone, config_clone).await
+            if let Err(e) = handle_connection(
+                client_socket,
+                state_clone,
+                lb_clone,
+                config_clone,
+                pool_clone,
+            )
+            .await
             {
                 error!("Connection error: {}", e);
             }
@@ -50,9 +63,25 @@ async fn handle_connection(
     state: Arc<ProxyState>,
     load_balancer: Arc<LoadBalancer>,
     config: crate::config::ProxyConfig,
+    pool: Arc<ConnectionPool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get client address for rate limiting and logging
     let client_addr = client.peer_addr()?;
+
+    let conn_start = std::time::Instant::now();
+    let client_ip = client_addr.ip().to_string();
+    let log_access = |backend: &str, bytes_sent: u64, bytes_received: u64, error: Option<String>| {
+        AccessLogEntry {
+            protocol: "tcp",
+            client_ip: client_ip.clone(),
+            backend: backend.to_string(),
+            bytes_sent,
+            bytes_received,
+            duration_ms: conn_start.elapsed().as_secs_f64() * 1000.0,
+            error,
+        }
+        .log();
+    };
 
     // Check rate limit
     if !state
@@ -62,6 +91,7 @@ async fn handle_connection(
     {
         warn!("Rate limit exceeded for client: {}", client_addr);
         state.metrics.record_rate_limit_denied();
+        log_access("", 0, 0, Some("rate limit exceeded".to_string()));
         return Err("Rate limit exceeded".into());
     }
 
@@ -83,9 +113,13 @@ async fn handle_connection(
     } else {
         None
     };
-    let backend = load_balancer
-        .select_backend_with_context(context.as_deref())
-        .ok_or("No healthy backends available")?;
+    let backend = match load_balancer.select_backend_with_context(context.as_deref()) {
+        Some(b) => b,
+        None => {
+            log_access("", 0, 0, Some("no healthy backends available".to_string()));
+            return Err("No healthy backends available".into());
+        }
+    };
 
     // Check circuit breaker
     if !state.circuit_breaker.read().allow_request(&backend.address) {
@@ -95,6 +129,12 @@ async fn handle_connection(
         );
         state.metrics.record_circuit_breaker_open();
         state.metrics.record_backend_failure(&backend.address);
+        log_access(
+            &backend.address,
+            0,
+            0,
+            Some("circuit breaker open".to_string()),
+        );
         return Err("Circuit breaker open".into());
     }
 
@@ -108,13 +148,22 @@ async fn handle_connection(
         backend_addr: backend.address.clone(),
     };
 
-    // Connect to backend with timeout
+    // Connect to backend — try the pre-warmed pool first to skip the
+    // handshake on the hot path, falling back to a fresh dial on a miss.
     let start_time = std::time::Instant::now();
-    let backend_result = tokio::time::timeout(
-        tokio::time::Duration::from_secs(config.connect_timeout_secs as u64),
-        TcpStream::connect(&backend.address),
-    )
-    .await;
+    let pooled = pool.take(&backend.address).await;
+
+    let backend_result = if let Some(stream) = pooled {
+        state.metrics.record_pool_hit();
+        Ok(Ok(stream))
+    } else {
+        state.metrics.record_pool_miss();
+        tokio::time::timeout(
+            tokio::time::Duration::from_secs(config.connect_timeout_secs as u64),
+            TcpStream::connect(&backend.address),
+        )
+        .await
+    };
 
     let mut backend_stream = match backend_result {
         Ok(Ok(stream)) => {
@@ -138,6 +187,7 @@ async fn handle_connection(
                 .read()
                 .record_failure(&backend.address);
             state.metrics.record_backend_failure(&backend.address);
+            log_access(&backend.address, 0, 0, Some(e.to_string()));
             return Err(e.into());
         }
         Err(_) => {
@@ -147,6 +197,12 @@ async fn handle_connection(
                 .read()
                 .record_failure(&backend.address);
             state.metrics.record_backend_failure(&backend.address);
+            log_access(
+                &backend.address,
+                0,
+                0,
+                Some("connection timeout".to_string()),
+            );
             return Err("Connection timeout".into());
         }
     };
@@ -162,8 +218,12 @@ async fn handle_connection(
     let (mut client_read, mut client_write) = client.split();
     let (mut backend_read, mut backend_write) = backend_stream.split();
 
+    let conn_bytes_sent = Arc::new(AtomicU64::new(0));
+    let conn_bytes_received = Arc::new(AtomicU64::new(0));
+
     let backend_addr_clone = backend.address.clone();
     let state_clone = state.clone();
+    let conn_bytes_sent_clone = conn_bytes_sent.clone();
 
     // Bidirectional copy
     let client_to_backend = async move {
@@ -192,12 +252,14 @@ async fn handle_connection(
             state_clone
                 .metrics
                 .record_backend_bytes_sent(&backend_addr_clone, n as u64);
+            conn_bytes_sent_clone.fetch_add(n as u64, Ordering::Relaxed);
             backend_write.write_all(&buf[..n]).await?;
         }
     };
 
     let backend_addr_clone2 = backend.address.clone();
     let state_clone2 = state.clone();
+    let conn_bytes_received_clone = conn_bytes_received.clone();
 
     let backend_to_client = async move {
         let mut buf = vec![0u8; 8192];
@@ -225,17 +287,20 @@ async fn handle_connection(
             state_clone2
                 .metrics
                 .record_backend_bytes_received(&backend_addr_clone2, n as u64);
+            conn_bytes_received_clone.fetch_add(n as u64, Ordering::Relaxed);
             client_write.write_all(&buf[..n]).await?;
         }
     };
 
     // Run both directions concurrently
+    let mut conn_error: Option<String> = None;
     let connection_ok = tokio::select! {
         result = client_to_backend => {
             if let Err(e) = result {
                 warn!("Client to backend error: {}", e);
                 state.circuit_breaker.read().record_failure(&backend.address);
                 state.metrics.record_backend_failure(&backend.address);
+                conn_error = Some(e.to_string());
                 false
             } else {
                 true
@@ -246,6 +311,7 @@ async fn handle_connection(
                 warn!("Backend to client error: {}", e);
                 state.circuit_breaker.read().record_failure(&backend.address);
                 state.metrics.record_backend_failure(&backend.address);
+                conn_error = Some(e.to_string());
                 false
             } else {
                 true
@@ -261,6 +327,12 @@ async fn handle_connection(
     }
     state.metrics.close_tcp_connection();
     debug!("Connection closed");
+    log_access(
+        &backend.address,
+        conn_bytes_sent.load(Ordering::Relaxed),
+        conn_bytes_received.load(Ordering::Relaxed),
+        conn_error,
+    );
 
     // Drop the load balancer guard to decrement connection count
     drop(lb_guard);

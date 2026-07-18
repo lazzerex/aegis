@@ -28,6 +28,10 @@ pub struct MetricsCollector {
     // Circuit breaker metrics
     pub circuit_breaker_open: AtomicU64,
     pub circuit_breaker_half_open: AtomicU64,
+
+    // Connection pool metrics
+    pub pool_hits: AtomicU64,
+    pub pool_misses: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -80,6 +84,8 @@ impl MetricsCollector {
             rate_limit_denied: AtomicU64::new(0),
             circuit_breaker_open: AtomicU64::new(0),
             circuit_breaker_half_open: AtomicU64::new(0),
+            pool_hits: AtomicU64::new(0),
+            pool_misses: AtomicU64::new(0),
         }
     }
 
@@ -220,6 +226,15 @@ impl MetricsCollector {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    // Connection pool metrics
+    pub fn record_pool_hit(&self) {
+        self.pool_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_pool_miss(&self) {
+        self.pool_misses.fetch_add(1, Ordering::Relaxed);
+    }
+
     // Get summary for logging/monitoring
     pub fn get_summary(&self) -> MetricsSummary {
         MetricsSummary {
@@ -235,6 +250,8 @@ impl MetricsCollector {
             rate_limit_denied: self.rate_limit_denied.load(Ordering::Relaxed),
             circuit_breaker_open: self.circuit_breaker_open.load(Ordering::Relaxed),
             circuit_breaker_half_open: self.circuit_breaker_half_open.load(Ordering::Relaxed),
+            pool_hits: self.pool_hits.load(Ordering::Relaxed),
+            pool_misses: self.pool_misses.load(Ordering::Relaxed),
             latency: self.get_latency_stats(),
         }
     }
@@ -279,5 +296,7 @@ pub struct MetricsSummary {
     pub rate_limit_denied: u64,
     pub circuit_breaker_open: u64,
     pub circuit_breaker_half_open: u64,
+    pub pool_hits: u64,
+    pub pool_misses: u64,
     pub latency: LatencyStats,
 }
