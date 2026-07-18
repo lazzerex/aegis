@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegis.controlPlane.fullname" . }}
+  labels:
+    {{- include "aegis.controlPlane.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controlPlane.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "aegis.controlPlane.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.controlPlane.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/controlplane-configmap.yaml") . | sha256sum }}
+        {{- with .Values.controlPlane.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.controlPlane.waitForDataPlane.enabled }}
+      initContainers:
+        - name: wait-for-data-plane
+          image: {{ .Values.controlPlane.waitForDataPlane.image }}
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "aegis.dataPlane.grpc.fullname" . }} {{ .Values.dataPlane.service.grpc.port }}; do
+                echo "waiting for data-plane gRPC..."
+                sleep 2
+              done
+      {{- end }}
+      containers:
+        - name: control-plane
+          image: "{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.controlPlane.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/aegis/config.yaml
+          ports:
+            - name: admin
+              containerPort: {{ .Values.controlPlane.service.adminPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.controlPlane.service.metricsPort }}
+              protocol: TCP
+          {{- $tokenSecretName := include "aegis.controlPlane.tokenSecretName" . }}
+          {{- if $tokenSecretName }}
+          env:
+            - name: AEGIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecretName }}
+                  key: {{ include "aegis.controlPlane.tokenSecretKey" . }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aegis/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            {{- if .Values.controlPlane.config.grpc.tlsCaCert }}
+            - name: ca-cert
+              mountPath: /etc/aegis/certs
+              readOnly: true
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: admin
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: admin
+            periodSeconds: 10
+          readinessProbe:
+            # NOTE: /health always returns 200 regardless of backend/data-plane
+            # state (see control-plane/internal/api/server.go) — this catches a
+            # dead process, not a broken link to the data plane. Acceptable
+            # default until the app grows a real readiness endpoint.
+            httpGet:
+              path: /health
+              port: admin
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "aegis.controlPlane.fullname" . }}
+        {{- if .Values.controlPlane.config.grpc.tlsCaCert }}
+        - name: ca-cert
+          configMap:
+            name: {{ include "aegis.controlPlane.fullname" . }}-ca
+        {{- end }}
+      {{- with .Values.controlPlane.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

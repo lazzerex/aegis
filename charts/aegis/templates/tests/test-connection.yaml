@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "aegis.fullname" . }}-test-connection"
+  labels:
+    {{- include "aegis.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      command:
+        - curl
+        - --fail
+        - "http://{{ include "aegis.controlPlane.fullname" . }}:{{ .Values.controlPlane.service.adminPort }}/health"

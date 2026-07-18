@@ -1,0 +1,17 @@
+apiVersion: v2
+name: aegis
+description: TCP/UDP L4 proxy with circuit breaking, load balancing, and health checking — Rust data plane + Go control plane
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - proxy
+  - load-balancer
+  - database-proxy
+  - l4-proxy
+  - circuit-breaker
+home: https://github.com/lazzerex/aegis
+sources:
+  - https://github.com/lazzerex/aegis
+maintainers:
+  - name: lazzerex

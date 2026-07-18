@@ -1,0 +1,139 @@
+# Default values for the aegis chart.
+# See charts/aegis/README.md for full documentation.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Rust data-plane: proxies client traffic (TCP/UDP), reconfigured at runtime
+#    over gRPC by the control plane. Has no config file of its own.
+dataPlane:
+  # NOT YET HA-SAFE: circuit breaker and rate limiter state live in-memory, per
+  # instance, with no cross-replica coordination (see project TASK.md Phase 3:
+  # "Circuit breaker state persistence", "Multi-instance coordination"). Running
+  # more than 1 replica today means client connections are round-robined across
+  # data-planes that each enforce their own independent rate limits and circuit
+  # breakers. Leave at 1 until that work lands.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/lazzerex/aegis-data
+    # -- Not published to any registry yet. Build Dockerfile.data yourself and
+    #    push to a registry you control until a CI publish pipeline exists.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  service:
+    # gRPC port used only by the control plane for pushing configuration.
+    # Always ClusterIP, never exposed via the client-facing Service below.
+    grpc:
+      port: 50051
+    # Direct Prometheus scrape target — stays up even if control-plane is down.
+    metrics:
+      port: 9100
+    # Client-facing ports — point your application (e.g. a database client) here.
+    client:
+      type: ClusterIP # ClusterIP | NodePort | LoadBalancer
+      tcpPort: 8080
+      udpPort: 8081
+
+  tls:
+    # -- Enables TLS on the data-plane's gRPC server (control-plane -> data-plane
+    #    channel only; unrelated to client-facing proxy traffic).
+    enabled: false
+    # PEM-encoded cert/key, used to render a Secret. Ignored if existingSecret is set.
+    cert: ""
+    key: ""
+    # -- Reference a pre-existing Secret instead of cert/key above (e.g. from
+    #    cert-manager or an external-secrets integration).
+    existingSecret: ""
+    existingSecretCertKey: tls.crt
+    existingSecretKeyKey: tls.key
+
+  resources: {}
+
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -- Go control-plane: config management, health checking, Admin API, metrics.
+controlPlane:
+  # NOT YET HA-SAFE — same rationale as dataPlane.replicaCount above.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/lazzerex/aegis-control
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    adminPort: 9090
+    metricsPort: 9091
+
+  # -- Bearer token for the Admin API's mutating routes (/reload, /drain,
+  #    POST/DELETE /backends). Rendered into a chart-managed Secret and passed
+  #    as the AEGIS_API_TOKEN env var. Leave "" to disable auth (app default).
+  apiToken: ""
+  # -- Reference a pre-existing Secret instead of apiToken above.
+  existingSecret: ""
+  existingSecretKey: token
+
+  # -- Init container that polls the data-plane's gRPC port before the control
+  #    plane starts. The control plane pushes config synchronously at boot and
+  #    exits fatally if the data plane isn't reachable yet; without this, first
+  #    install churns through CrashLoopBackOff until data-plane comes up.
+  waitForDataPlane:
+    enabled: true
+    image: busybox:1.36
+
+  config:
+    proxy:
+      # -- REQUIRED: real backend addresses. Left empty by default so you don't
+      #    accidentally point at unreachable placeholder hosts.
+      backends: []
+      # - address: db1.internal:5432
+      #   weight: 100
+      #   healthCheck:
+      #     interval: 5s
+      #     timeout: 2s
+      #     path: ""
+      udpBackends: []
+      loadBalancing:
+        algorithm: round_robin # round_robin | weighted_round_robin | least_connections | consistent_hash
+        sessionAffinity: true
+      traffic:
+        rateLimit:
+          requestsPerSecond: 1000
+          burst: 100
+        timeout:
+          connect: 5s
+          idle: 60s
+          read: 30s
+      circuitBreaker:
+        errorThreshold: 5
+        timeout: 30s
+    grpc:
+      # -- CA cert (PEM) to verify the data-plane's TLS cert. Only meaningful
+      #    when dataPlane.tls.enabled is true.
+      tlsCaCert: ""
+      # -- Dev-only: skip TLS verification entirely. Never use in production.
+      tlsSkipVerify: false
+
+  resources: {}
+
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -- HorizontalPodAutoscaler for the data plane. Disabled by default: replicas
+#    do not yet share rate-limiter/circuit-breaker state (see dataPlane.replicaCount
+#    comment above), so autoscaling would silently fragment that state per pod.
+#    Template is included so it's ready to enable once multi-instance
+#    coordination (TASK.md Phase 3) lands — no chart change needed then.
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80

@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aegis.dataPlane.fullname" . }}
+  labels:
+    {{- include "aegis.dataPlane.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dataPlane.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "aegis.dataPlane.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.dataPlane.selectorLabels" . | nindent 8 }}
+      {{- with .Values.dataPlane.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      containers:
+        - name: data-plane
+          image: "{{ .Values.dataPlane.image.repository }}:{{ .Values.dataPlane.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.dataPlane.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+            - name: tcp-proxy
+              containerPort: 8080
+              protocol: TCP
+            - name: udp-proxy
+              containerPort: 8081
+              protocol: UDP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          {{- if .Values.dataPlane.tls.enabled }}
+          env:
+            - name: AEGIS_TLS_CERT_FILE
+              value: /etc/aegis/tls/{{ .Values.dataPlane.tls.existingSecret | ternary .Values.dataPlane.tls.existingSecretCertKey "tls.crt" }}
+            - name: AEGIS_TLS_KEY_FILE
+              value: /etc/aegis/tls/{{ .Values.dataPlane.tls.existingSecret | ternary .Values.dataPlane.tls.existingSecretKeyKey "tls.key" }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/aegis/tls
+              readOnly: true
+          {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: grpc
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.dataPlane.resources | nindent 12 }}
+      {{- if .Values.dataPlane.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ include "aegis.dataPlane.tlsSecretName" . }}
+      {{- end }}
+      {{- with .Values.dataPlane.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dataPlane.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dataPlane.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

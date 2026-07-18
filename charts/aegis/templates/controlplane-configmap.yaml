@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegis.controlPlane.fullname" . }}
+  labels:
+    {{- include "aegis.controlPlane.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    proxy:
+      listen:
+        tcp: "0.0.0.0:8080"
+        udp: "0.0.0.0:8081"
+      backends:
+        {{- if .Values.controlPlane.config.proxy.backends }}
+        {{- range .Values.controlPlane.config.proxy.backends }}
+        - address: {{ .address | quote }}
+          weight: {{ .weight | default 100 }}
+          health_check:
+            interval: {{ .healthCheck.interval | default "5s" | quote }}
+            timeout: {{ .healthCheck.timeout | default "2s" | quote }}
+            path: {{ .healthCheck.path | default "" | quote }}
+        {{- end }}
+        {{- else }}
+        []
+        {{- end }}
+      udp_backends:
+        {{- if .Values.controlPlane.config.proxy.udpBackends }}
+        {{- range .Values.controlPlane.config.proxy.udpBackends }}
+        - address: {{ .address | quote }}
+          weight: {{ .weight | default 100 }}
+          health_check:
+            interval: {{ .healthCheck.interval | default "5s" | quote }}
+            timeout: {{ .healthCheck.timeout | default "2s" | quote }}
+            path: {{ .healthCheck.path | default "" | quote }}
+        {{- end }}
+        {{- else }}
+        []
+        {{- end }}
+      load_balancing:
+        algorithm: {{ .Values.controlPlane.config.proxy.loadBalancing.algorithm | quote }}
+        session_affinity: {{ .Values.controlPlane.config.proxy.loadBalancing.sessionAffinity }}
+      traffic:
+        rate_limit:
+          requests_per_second: {{ .Values.controlPlane.config.proxy.traffic.rateLimit.requestsPerSecond }}
+          burst: {{ .Values.controlPlane.config.proxy.traffic.rateLimit.burst }}
+        timeout:
+          connect: {{ .Values.controlPlane.config.proxy.traffic.timeout.connect | quote }}
+          idle: {{ .Values.controlPlane.config.proxy.traffic.timeout.idle | quote }}
+          read: {{ .Values.controlPlane.config.proxy.traffic.timeout.read | quote }}
+      circuit_breaker:
+        error_threshold: {{ .Values.controlPlane.config.proxy.circuitBreaker.errorThreshold }}
+        timeout: {{ .Values.controlPlane.config.proxy.circuitBreaker.timeout | quote }}
+
+    admin:
+      api_address: "0.0.0.0:{{ .Values.controlPlane.service.adminPort }}"
+      metrics_address: "0.0.0.0:{{ .Values.controlPlane.service.metricsPort }}"
+
+    grpc:
+      # Computed from the release's data-plane Service name — do not make this a
+      # plain values.yaml field, it must always match aegis.dataPlane.grpc.fullname.
+      control_plane_address: "{{ include "aegis.dataPlane.grpc.fullname" . }}:{{ .Values.dataPlane.service.grpc.port }}"
+      {{- if .Values.controlPlane.config.grpc.tlsCaCert }}
+      tls_ca_cert: "/etc/aegis/certs/ca.crt"
+      {{- end }}
+      tls_skip_verify: {{ .Values.controlPlane.config.grpc.tlsSkipVerify }}

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aegis.dataPlane.fullname" . }}
+  labels:
+    {{- include "aegis.dataPlane.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.dataPlane.service.client.type }}
+  selector:
+    {{- include "aegis.dataPlane.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: tcp-proxy
+      port: {{ .Values.dataPlane.service.client.tcpPort }}
+      targetPort: tcp-proxy
+      protocol: TCP
+    - name: udp-proxy
+      port: {{ .Values.dataPlane.service.client.udpPort }}
+      targetPort: udp-proxy
+      protocol: UDP
