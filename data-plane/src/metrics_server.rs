@@ -30,11 +30,9 @@ pub async fn run(state: Arc<ProxyState>, addr: String) -> Result<(), Box<dyn std
             // Drain the request; we serve /metrics unconditionally regardless
             // of path/method, so there's nothing to route on.
             let mut buf = [0u8; 1024];
-            let _ = tokio::time::timeout(
-                tokio::time::Duration::from_secs(2),
-                socket.read(&mut buf),
-            )
-            .await;
+            let _ =
+                tokio::time::timeout(tokio::time::Duration::from_secs(2), socket.read(&mut buf))
+                    .await;
 
             let body = match render_metrics(&state) {
                 Ok(body) => body,

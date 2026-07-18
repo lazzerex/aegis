@@ -70,18 +70,19 @@ async fn handle_connection(
 
     let conn_start = std::time::Instant::now();
     let client_ip = client_addr.ip().to_string();
-    let log_access = |backend: &str, bytes_sent: u64, bytes_received: u64, error: Option<String>| {
-        AccessLogEntry {
-            protocol: "tcp",
-            client_ip: client_ip.clone(),
-            backend: backend.to_string(),
-            bytes_sent,
-            bytes_received,
-            duration_ms: conn_start.elapsed().as_secs_f64() * 1000.0,
-            error,
-        }
-        .log();
-    };
+    let log_access =
+        |backend: &str, bytes_sent: u64, bytes_received: u64, error: Option<String>| {
+            AccessLogEntry {
+                protocol: "tcp",
+                client_ip: client_ip.clone(),
+                backend: backend.to_string(),
+                bytes_sent,
+                bytes_received,
+                duration_ms: conn_start.elapsed().as_secs_f64() * 1000.0,
+                error,
+            }
+            .log();
+        };
 
     // Check rate limit
     if !state

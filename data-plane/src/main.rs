@@ -125,7 +125,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(4);
     let connection_pool = connection::ConnectionPool::new(pool_size);
-    connection_pool.clone().spawn_refill_task(proxy_state.clone());
+    connection_pool
+        .clone()
+        .spawn_refill_task(proxy_state.clone());
 
     // Start TCP proxy
     let tcp_state = proxy_state.clone();

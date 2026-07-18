@@ -235,8 +235,7 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
                             .unwrap_or_else(|| "unknown".to_string());
                         proxy::BackendMetrics {
                             address,
-                            active_connections: backend.connections.load(Ordering::Relaxed)
-                                as i64,
+                            active_connections: backend.connections.load(Ordering::Relaxed) as i64,
                             total_requests: backend.requests.load(Ordering::Relaxed) as i64,
                             failed_requests: backend.failures.load(Ordering::Relaxed) as i64,
                             avg_latency_ms: 0.0,

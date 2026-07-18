@@ -307,10 +307,7 @@ mod tests {
     #[test]
     fn test_weighted_round_robin_large_weights_no_overflow() {
         let lb = LoadBalancer::new(
-            vec![
-                backend("a", i32::MAX / 2),
-                backend("b", i32::MAX / 2),
-            ],
+            vec![backend("a", i32::MAX / 2), backend("b", i32::MAX / 2)],
             "weighted_round_robin".to_string(),
         );
 
