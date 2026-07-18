@@ -50,7 +50,7 @@ func buildTransportCredentials(grpcCfg config.GRPCConfig, logger *zap.Logger) (c
 		}
 		logger.Warn("gRPC TLS verification disabled (tls_skip_verify=true); do not use in production")
 		return credentials.NewTLS(&tls.Config{ //nolint:gosec
-			InsecureSkipVerify: true,          //nolint:gosec
+			InsecureSkipVerify: true, //nolint:gosec
 			MinVersion:         tls.VersionTLS12,
 		}), nil
 	}
