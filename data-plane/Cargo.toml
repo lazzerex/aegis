@@ -20,6 +20,7 @@ tokio-stream = "0.1"
 async-trait = "0.1"
 dashmap = "5.5"
 parking_lot = "0.12"
+prometheus = "0.13"
 
 [build-dependencies]
 tonic-build = "0.10"
