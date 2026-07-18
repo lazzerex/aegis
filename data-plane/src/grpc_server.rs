@@ -224,15 +224,24 @@ impl proxy::proxy_control_server::ProxyControl for ProxyControlService {
                     summary.active_tcp_connections + summary.active_udp_sessions;
                 let total_connections = summary.tcp_connections + summary.udp_sessions;
 
+                let circuit_breaker = state.circuit_breaker.read().clone();
                 let backend_metrics = metrics
                     .get_backend_metrics()
                     .into_iter()
-                    .map(|(address, backend)| proxy::BackendMetrics {
-                        address,
-                        active_connections: backend.connections.load(Ordering::Relaxed) as i64,
-                        total_requests: backend.requests.load(Ordering::Relaxed) as i64,
-                        failed_requests: backend.failures.load(Ordering::Relaxed) as i64,
-                        avg_latency_ms: 0.0,
+                    .map(|(address, backend)| {
+                        let circuit_state = circuit_breaker
+                            .get_state(&address)
+                            .map(|s| format!("{:?}", s))
+                            .unwrap_or_else(|| "unknown".to_string());
+                        proxy::BackendMetrics {
+                            address,
+                            active_connections: backend.connections.load(Ordering::Relaxed)
+                                as i64,
+                            total_requests: backend.requests.load(Ordering::Relaxed) as i64,
+                            failed_requests: backend.failures.load(Ordering::Relaxed) as i64,
+                            avg_latency_ms: 0.0,
+                            circuit_state,
+                        }
                     })
                     .collect();
 

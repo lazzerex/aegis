@@ -118,4 +118,5 @@ message BackendMetrics {
   int64 total_requests = 3;
   int64 failed_requests = 4;
   double avg_latency_ms = 5;
+  string circuit_state = 6; // "Closed", "Open", "HalfOpen", or "unknown"
 }
