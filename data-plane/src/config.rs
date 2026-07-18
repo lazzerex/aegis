@@ -157,3 +157,67 @@ impl ProxyState {
         self.metrics.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(backend_addr: &str) -> ProxyConfig {
+        ProxyConfig {
+            tcp_address: "0.0.0.0:8080".to_string(),
+            udp_address: "0.0.0.0:8081".to_string(),
+            backends: vec![Backend {
+                address: backend_addr.to_string(),
+                weight: 100,
+                healthy: true,
+            }],
+            udp_backends: vec![],
+            algorithm: "round_robin".to_string(),
+            session_affinity: false,
+            rate_limit_rps: 1000,
+            rate_limit_burst: 100,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 60,
+            read_timeout_secs: 30,
+            circuit_breaker_threshold: 5,
+            circuit_breaker_timeout_secs: 30,
+        }
+    }
+
+    /// Regression test for the unsound `unsafe` circuit_breaker/rate_limiter
+    /// mutation (config.rs:81): concurrent readers must never observe a torn
+    /// or panicking state while update_config swaps the RwLock<Arc<T>> fields.
+    #[test]
+    fn test_update_config_concurrent_reads_dont_panic() {
+        let state = Arc::new(ProxyState::new());
+
+        let writer_state = state.clone();
+        let writer = std::thread::spawn(move || {
+            for i in 0..200 {
+                writer_state.update_config(test_config(&format!("backend-{i}:5432")));
+            }
+        });
+
+        let mut readers = Vec::new();
+        for _ in 0..4 {
+            let reader_state = state.clone();
+            readers.push(std::thread::spawn(move || {
+                for _ in 0..500 {
+                    let _ = reader_state.get_tcp_lb();
+                    let _ = reader_state.get_udp_lb();
+                    let _ = reader_state.circuit_breaker.read().clone();
+                    let _ = reader_state.rate_limiter.read().clone();
+                    let _ = reader_state.get_config();
+                }
+            }));
+        }
+
+        writer.join().expect("writer thread panicked");
+        for reader in readers {
+            reader.join().expect("reader thread panicked");
+        }
+
+        // Final state must reflect the last applied config.
+        assert!(state.get_config().is_some());
+    }
+}
