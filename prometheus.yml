@@ -16,6 +16,17 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 10s
 
+  # Scraped directly, independent of control-plane: stays up even if the
+  # control plane is down, since it reads data-plane's own atomics.
+  - job_name: 'aegis-data-plane'
+    static_configs:
+      - targets: ['data-plane:9100']
+        labels:
+          service: 'data-plane'
+          component: 'metrics'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
   # Prometheus self-monitoring
   - job_name: 'prometheus'
     static_configs:

@@ -83,6 +83,7 @@ services:
       - "50051:50051"  # gRPC
       - "8080:8080"    # TCP Proxy
       - "8081:8081/udp" # UDP Proxy
+      - "9100:9100"    # Prometheus metrics
     restart: unless-stopped
     healthcheck:        #why are we even failing healthchecks sometimes??
       test: ["CMD", "nc", "-n", "-z", "127.0.0.1", "50051"]
