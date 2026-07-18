@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tracing::{debug, error, info, warn};
 
+use crate::access_log::AccessLogEntry;
 use crate::config::ProxyState;
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
@@ -16,6 +17,7 @@ struct UdpSession {
     backend_addr: String,
     backend_socket_addr: SocketAddr,
     client_addr: SocketAddr,
+    created_at: Instant,
     last_activity: Instant,
     bytes_sent: u64,
     bytes_received: u64,
@@ -39,6 +41,7 @@ impl UdpSession {
             backend_addr,
             backend_socket_addr,
             client_addr,
+            created_at: Instant::now(),
             last_activity: Instant::now(),
             bytes_sent: 0,
             bytes_received: 0,
@@ -46,6 +49,20 @@ impl UdpSession {
             packets_received: 0,
             state,
         }
+    }
+
+    /// Emit the structured access log line for this session's lifetime so far.
+    fn log_access(&self, error: Option<String>) {
+        AccessLogEntry {
+            protocol: "udp",
+            client_ip: self.client_addr.ip().to_string(),
+            backend: self.backend_addr.clone(),
+            bytes_sent: self.bytes_sent,
+            bytes_received: self.bytes_received,
+            duration_ms: self.created_at.elapsed().as_secs_f64() * 1000.0,
+            error,
+        }
+        .log();
     }
 
     fn update_activity(&mut self) {
@@ -119,15 +136,6 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
             // Find expired sessions
             for entry in sessions_clone.iter() {
                 if entry.value().is_expired(SESSION_TIMEOUT) {
-                    debug!(
-                        "Session expired: {} -> {} (sent: {}/{} bytes/pkts, received: {}/{} bytes/pkts)",
-                        entry.value().client_addr,
-                        entry.value().backend_addr,
-                        entry.value().bytes_sent,
-                        entry.value().packets_sent,
-                        entry.value().bytes_received,
-                        entry.value().packets_received
-                    );
                     expired_keys.push(entry.key().clone());
                 }
             }
@@ -135,6 +143,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
             // Remove expired sessions
             for key in expired_keys {
                 if let Some((_, session)) = sessions_clone.remove(&key) {
+                    session.log_access(None);
                     reverse_sessions_clone.remove(&session.backend_socket_addr);
                 }
             }
@@ -304,15 +313,7 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
     // Log final statistics on shutdown
     info!("UDP proxy shutdown - active sessions: {}", sessions.len());
     for entry in sessions.iter() {
-        debug!(
-            "Final session stats: {} -> {} (sent: {}/{}, received: {}/{})",
-            entry.value().client_addr,
-            entry.value().backend_addr,
-            entry.value().bytes_sent,
-            entry.value().packets_sent,
-            entry.value().bytes_received,
-            entry.value().packets_received
-        );
+        entry.value().log_access(Some("proxy shutdown".to_string()));
     }
 
     Ok(())
