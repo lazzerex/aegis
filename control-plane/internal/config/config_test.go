@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -104,6 +105,56 @@ func TestLoad_MissingFileReturnsError(t *testing.T) {
 	_, err := Load("/nonexistent/path/config.yaml")
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
+	}
+}
+
+// Regression test: valid YAML that's semantically broken (missing required
+// address, unknown algorithm, negative rate limit) used to load and apply
+// without complaint. Load() must now reject it before it reaches the data
+// plane.
+func TestLoad_InvalidConfigRejected(t *testing.T) {
+	yaml := `
+proxy:
+  listen:
+    tcp: ""
+  backends:
+    - address: ""
+    - address: "db1:5432"
+    - address: "db1:5432"
+  load_balancing:
+    algorithm: "made_up_algorithm"
+  traffic:
+    rate_limit:
+      requests_per_second: -1
+admin:
+  api_address: "0.0.0.0:9090"
+  metrics_address: "0.0.0.0:9091"
+grpc:
+  control_plane_address: "localhost:50051"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for semantically invalid config, got nil")
+	}
+
+	for _, want := range []string{
+		"proxy.listen.tcp is required",
+		"address is required",
+		"duplicate backend address",
+		`unknown algorithm "made_up_algorithm"`,
+		"requests_per_second must be >= 0",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestLoad_ValidConfigAccepted(t *testing.T) {
+	path := writeTempConfig(t, minimalConfig)
+	if _, err := Load(path); err != nil {
+		t.Fatalf("expected valid config to load, got: %v", err)
 	}
 }
 

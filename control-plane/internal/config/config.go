@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -122,5 +123,79 @@ func Load(filename string) (*Config, error) {
 		cfg.Admin.APIToken = token
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// validAlgorithms mirrors data-plane/src/load_balancer.rs's Algorithm::from_str
+// match arms — kept in sync manually since the two sides don't share types.
+var validAlgorithms = map[string]bool{
+	"round_robin":          true,
+	"weighted_round_robin": true,
+	"weighted":             true,
+	"least_connections":    true,
+	"consistent_hash":      true,
+}
+
+// Validate rejects a config that parsed as valid YAML but is semantically
+// broken (missing required addresses, unknown algorithm, negative limits,
+// duplicate backends) — called from Load() so a bad reload never reaches
+// the data plane instead of applying partially.
+func (c *Config) Validate() error {
+	var errs []string
+
+	if c.Proxy.Listen.TCP == "" {
+		errs = append(errs, "proxy.listen.tcp is required")
+	}
+	if c.Admin.APIAddress == "" {
+		errs = append(errs, "admin.api_address is required")
+	}
+	if c.Admin.MetricsAddress == "" {
+		errs = append(errs, "admin.metrics_address is required")
+	}
+	if c.GRPC.ControlPlaneAddress == "" {
+		errs = append(errs, "grpc.control_plane_address is required")
+	}
+	if !validAlgorithms[c.Proxy.LoadBalancing.Algorithm] {
+		errs = append(errs, fmt.Sprintf("proxy.load_balancing.algorithm: unknown algorithm %q", c.Proxy.LoadBalancing.Algorithm))
+	}
+	if c.Proxy.Traffic.RateLimit.RequestsPerSecond < 0 {
+		errs = append(errs, "proxy.traffic.rate_limit.requests_per_second must be >= 0")
+	}
+	if c.Proxy.Traffic.RateLimit.Burst < 0 {
+		errs = append(errs, "proxy.traffic.rate_limit.burst must be >= 0")
+	}
+	if c.Proxy.CircuitBreaker.ErrorThreshold < 0 {
+		errs = append(errs, "proxy.circuit_breaker.error_threshold must be >= 0")
+	}
+
+	errs = append(errs, validateBackends("proxy.backends", c.Proxy.Backends)...)
+	errs = append(errs, validateBackends("proxy.udp_backends", c.Proxy.UdpBackends)...)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
+func validateBackends(field string, backends []Backend) []string {
+	var errs []string
+	seen := make(map[string]bool, len(backends))
+	for i, b := range backends {
+		if b.Address == "" {
+			errs = append(errs, fmt.Sprintf("%s[%d].address is required", field, i))
+			continue
+		}
+		if seen[b.Address] {
+			errs = append(errs, fmt.Sprintf("%s[%d]: duplicate backend address %q", field, i, b.Address))
+		}
+		seen[b.Address] = true
+		if b.Weight < 0 {
+			errs = append(errs, fmt.Sprintf("%s[%d] (%s): weight must be >= 0", field, i, b.Address))
+		}
+	}
+	return errs
 }
