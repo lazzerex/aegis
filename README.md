@@ -20,6 +20,7 @@
 [![Chi](https://img.shields.io/badge/Chi-router-00ADD8)](https://github.com/go-chi/chi)
 [![Zap](https://img.shields.io/badge/Zap-logging-FF6B00)](https://github.com/uber-go/zap)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Helm%20chart-326CE5?logo=kubernetes&logoColor=white)](charts/aegis)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io)
 [![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white)](https://grafana.com)
 
@@ -60,6 +61,7 @@ Aegis is designed for production use in microservice architectures and backend i
 - [Running Aegis](#running-aegis)
   - [Local Development with Make](#local-development-with-make)
   - [Docker Compose](#docker-compose)
+  - [Helm Chart (Kubernetes)](#helm-chart-kubernetes)
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Monitoring](#monitoring)
@@ -129,10 +131,14 @@ make run-control
 - **Circuit Breaking**: Automatic failure detection and backend recovery with configurable thresholds
 - **Rate Limiting**: Token bucket algorithm with global and per-connection limits
 - **Health Checking**: Periodic backend health monitoring with automatic failover
+- **Connection Pooling**: Pre-warmed idle backend connections skip the TCP handshake on the hot path — protocol-safe (not request-level reuse; each connection still serves exactly one client's session)
+- **Config Validation**: Bad config is rejected at load/reload time, never partially applied
 - **Graceful Shutdown**: Connection draining and cleanup
 
 ### Observability
-- **Prometheus Metrics**: Comprehensive metrics exposed on `/metrics` endpoint
+- **Dual Prometheus Endpoints**: Control plane (`:9091/metrics`) and data plane (`:9100/metrics`) scraped independently — data plane metrics stay up even if the control plane is down
+- **Structured Access Logs**: One JSON line per connection (client IP, backend, bytes, latency, error) for both TCP and UDP
+- **Read-only Dashboard**: `GET /dashboard` on the Admin API — backend health, weight, and live circuit breaker state, no auth, no build step
 - **Structured Logging**: Detailed tracing with configurable log levels
 - **gRPC Communication**: Clean separation between control and data planes
 
@@ -140,12 +146,15 @@ make run-control
 - **`aegis-ctl` CLI**: Built-in operator tool for live backend management
 - **Admin API authentication**: Bearer token via `AEGIS_API_TOKEN` env var
 - **Dynamic backend API**: Add/remove backends at runtime without config reload
+- **Helm Chart**: `charts/aegis/` for Kubernetes deployment (see [Helm Chart](#helm-chart-kubernetes))
+- **TLS on gRPC**: Optional TLS between control and data planes via `AEGIS_TLS_CERT_FILE`/`AEGIS_TLS_KEY_FILE`
 
 ### Coming Soon
 - Distributed tracing with OpenTelemetry
 - HTTP/2 support and WebSocket proxying
 - Zero-downtime config reload (preserve existing connections)
-- Helm chart for Kubernetes deployment
+- Kubernetes service discovery (auto-register backends from a Service's endpoints)
+- Redis-backed multi-instance state coordination (circuit breaker state only — see [TASK.md](TASK.md) for why rate limiting is intentionally excluded)
 
 ## Architecture
 
@@ -523,6 +532,22 @@ docker-compose down -v           # Stop and remove volumes
 - Prometheus: http://localhost:9092
 - Grafana: http://localhost:3030
 
+### Helm Chart (Kubernetes)
+
+`charts/aegis/` deploys both components as one release — see [`charts/aegis/README.md`](charts/aegis/README.md) for full details.
+
+```bash
+helm install aegis charts/aegis \
+  --set controlPlane.config.proxy.backends[0].address=db1.internal:5432 \
+  --set dataPlane.image.repository=<your-registry>/aegis-data \
+  --set controlPlane.image.repository=<your-registry>/aegis-control
+```
+
+Notes:
+- No public images are published yet — build `Dockerfile.data`/`Dockerfile.control` and push to a registry your cluster can pull from.
+- `replicaCount` defaults to `1` for both components and the bundled HPA ships disabled — circuit breaker/rate limiter state is per-instance, not yet safe to run >1 replica (see [TASK.md](TASK.md) Phase 3).
+- Not yet run through `helm lint`/a live cluster in this environment — review rendered output with `helm template` before deploying.
+
 ### Quick Reference
 
 **Essential Commands:**
@@ -575,8 +600,9 @@ aegis-ctl drain                             # drain connections
 |------------------|-------|----------------------------|
 | TCP Proxy        | 8080  | Main proxy entry point     |
 | UDP Proxy        | 8081  | UDP proxy entry point      |
-| Admin API        | 9090  | Control & management       |
-| Metrics          | 9091  | Prometheus metrics         |
+| Admin API        | 9090  | Control & management (`/health`, `/status`, `/backends`, `/dashboard`) |
+| Metrics          | 9091  | Prometheus metrics (control plane, aggregated) |
+| Data Plane Metrics | 9100 | Prometheus metrics (data plane, direct — stays up if control plane is down) |
 | gRPC (Internal)  | 50051 | Control/data plane comms   |
 | Prometheus       | 9092  | Metrics scraping           |
 | Grafana          | 3030  | Dashboard visualization    |
@@ -856,6 +882,10 @@ open http://localhost:9092  # Prometheus
 
 ### Prometheus Metrics
 
+**Two independent endpoints:**
+- `http://localhost:9091/metrics` — control plane, aggregated from the data plane over gRPC (also carries Go runtime metrics)
+- `http://localhost:9100/metrics` — data plane, direct, rebuilt from live counters on every scrape. Keeps working even if the control plane is down, since it doesn't route through it.
+
 **Metrics Endpoint:** `http://localhost:9091/metrics`
 
 **Key Metrics:**
@@ -878,6 +908,10 @@ open http://localhost:9092  # Prometheus
 **Rate Limiter Metrics:**
 - `proxy_rate_limit_rejected_total` - Rejected requests due to rate limiting
 
+**Connection Pool Metrics** (data plane only, `:9100/metrics`):
+- `proxy_pool_hits_total` - Backend connections served from the pre-warmed pool
+- `proxy_pool_misses_total` - Backend connections that required a fresh dial
+
 **Backend Health:**
 - `proxy_backend_healthy{backend="..."}` - Health status (0=unhealthy, 1=healthy)
 - `proxy_backend_connections{backend="..."}` - Per-backend connection count
@@ -895,6 +929,15 @@ curl http://localhost:9091/metrics | grep proxy_
 
 # Check request rate
 curl -s http://localhost:9091/metrics | grep proxy_requests_total
+```
+
+### Access Logs
+
+The data plane emits one structured JSON line per connection (both TCP and UDP) at `target=access_log`, covering every exit path — rate limited, no healthy backend, circuit breaker open, connect failure/timeout, and normal close:
+
+```bash
+docker-compose logs data-plane | grep access_log
+# {"protocol":"tcp","client_ip":"127.0.0.1","backend":"localhost:3000","bytes_sent":77,"bytes_received":783,"duration_ms":0.8,"error":null}
 ```
 
 ### Grafana Dashboards
@@ -987,7 +1030,10 @@ Monitor and control Aegis via the Admin API (port 9090):
 # Health status with backend states (no auth required)
 curl http://localhost:9090/health
 
-# List backends with health state (no auth required)
+# Read-only dashboard — backend health, weight, circuit state (no auth required)
+open http://localhost:9090/dashboard
+
+# List backends with health state + circuit breaker state (no auth required)
 curl http://localhost:9090/backends
 
 # Proxy configuration and status (no auth required)
@@ -1087,10 +1133,11 @@ aegis/
 │   │       └── main.go
 │   ├── internal/
 │   │   ├── api/            # REST API handlers + tests
-│   │   ├── config/         # Configuration management + tests
+│   │   │   └── dashboard.html # Read-only dashboard (go:embed)
+│   │   ├── config/         # Configuration management + validation + tests
 │   │   ├── grpc/           # gRPC client to data plane
 │   │   ├── health/         # Health checker + tests
-│   │   └── metrics/        # Prometheus metrics
+│   │   └── metrics/        # Prometheus metrics + circuit state tracking
 │   ├── proto/              # Generated protobuf code
 │   ├── aegis-control       # Binary (after build)
 │   ├── aegis-ctl           # CLI binary (after build)
@@ -1105,8 +1152,11 @@ aegis/
 │   │   ├── load_balancer.rs # Load balancing algorithms
 │   │   ├── rate_limiter.rs  # Rate limiting
 │   │   ├── circuit_breaker.rs # Circuit breaker
+│   │   ├── connection.rs    # Pre-warmed backend connection pool
+│   │   ├── access_log.rs    # Structured JSON per-connection logging
 │   │   ├── config.rs        # Configuration structures
-│   │   └── metrics.rs       # Metrics collection
+│   │   ├── metrics.rs       # Metrics collection
+│   │   └── metrics_server.rs # Direct Prometheus /metrics endpoint (9100)
 │   ├── target/release/
 │   │   └── aegis-data      # Binary (after build)
 │   ├── Cargo.toml
@@ -1126,6 +1176,10 @@ aegis/
 │   └── provisioning/
 │       ├── dashboards/     # Pre-configured dashboards
 │       └── datasources/    # Datasource configuration
+│
+├── charts/aegis/             # Helm chart for Kubernetes deployment
+│   ├── values.yaml
+│   └── templates/
 │
 ├── .env.example             # Environment variable template (copy to .env)
 ├── config.yaml              # Local development config (localhost)
@@ -1224,10 +1278,19 @@ protoc-gen-go --version
 - [x] Dynamic backend management API (`GET/POST/DELETE /backends`)
 - [x] `aegis-ctl` CLI for live backend management
 - [x] SIGTERM handling for container/Kubernetes graceful shutdown
+- [x] TLS on the control-plane ↔ data-plane gRPC channel
+- [x] Helm chart for Kubernetes
+- [x] Pre-warmed backend connection pooling
+- [x] Structured JSON access logging (TCP + UDP, all exit paths)
+- [x] Config validation on load/reload
+- [x] Direct Prometheus scrape on the data plane (independent of control plane)
+- [x] Read-only admin dashboard (`GET /dashboard`)
 - [ ] Zero-downtime reload (preserve active connections)
 - [ ] HTTP/2 support
 - [ ] Distributed tracing
-- [ ] Helm chart for Kubernetes
+- [ ] Kubernetes service discovery (auto-register backends from Service endpoints)
+- [ ] Redis-backed multi-instance coordination (circuit breaker state)
+- [ ] Circuit breaker state persistence across restarts/reloads
 
 ## Contributing
 
