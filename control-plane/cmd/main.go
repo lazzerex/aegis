@@ -67,7 +67,7 @@ func main() {
 	grpcClient.StreamMetrics(metricsCollector)
 
 	// Initialize REST API
-	apiServer := api.NewServer(cfg, *configFile, grpcClient, healthChecker, logger)
+	apiServer := api.NewServer(cfg, *configFile, grpcClient, healthChecker, metricsCollector, logger)
 
 	// Start API server
 	go func() {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -14,6 +15,9 @@ import (
 	"go.uber.org/zap"
 )
 
+//go:embed dashboard.html
+var dashboardHTML []byte
+
 type grpcBackendClient interface {
 	UpdateConfig(cfg *config.Config) error
 	ReloadBackendsWithHealth(backends []config.Backend, healthState map[string]bool) error
@@ -25,22 +29,30 @@ type healthStateTracker interface {
 	Reload(cfg *config.Config)
 }
 
+// circuitStateProvider is optional — a Server without one (e.g. in tests)
+// just omits circuit_state from backend responses.
+type circuitStateProvider interface {
+	BackendCircuitStates() map[string]string
+}
+
 type Server struct {
 	mu            sync.RWMutex
 	config        *config.Config
 	configPath    string
 	grpcClient    grpcBackendClient
 	healthChecker healthStateTracker
+	circuitStates circuitStateProvider
 	logger        *zap.Logger
 	server        *http.Server
 }
 
-func NewServer(cfg *config.Config, configPath string, client grpcBackendClient, checker healthStateTracker, logger *zap.Logger) *Server {
+func NewServer(cfg *config.Config, configPath string, client grpcBackendClient, checker healthStateTracker, circuitStates circuitStateProvider, logger *zap.Logger) *Server {
 	return &Server{
 		config:        cfg,
 		configPath:    configPath,
 		grpcClient:    client,
 		healthChecker: checker,
+		circuitStates: circuitStates,
 		logger:        logger,
 	}
 }
@@ -57,6 +69,7 @@ func (s *Server) Start(address string) error {
 	r.Get("/health", s.handleHealth)
 	r.Get("/status", s.handleStatus)
 	r.Get("/backends", s.handleListBackends)
+	r.Get("/dashboard", s.handleDashboard)
 	r.With(s.requireToken).Post("/reload", s.handleReload)
 	r.With(s.requireToken).Post("/drain", s.handleDrain)
 	r.With(s.requireToken).Post("/backends", s.handleAddBackend)
@@ -134,19 +147,36 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListBackends(w http.ResponseWriter, r *http.Request) {
 	healthState := s.healthChecker.GetHealthState()
 
+	var circuitStates map[string]string
+	if s.circuitStates != nil {
+		circuitStates = s.circuitStates.BackendCircuitStates()
+	}
+
 	s.mu.RLock()
 	backends := make([]map[string]interface{}, len(s.config.Proxy.Backends))
 	for i, b := range s.config.Proxy.Backends {
-		backends[i] = map[string]interface{}{
+		entry := map[string]interface{}{
 			"address": b.Address,
 			"weight":  b.Weight,
 			"healthy": healthState[b.Address],
 		}
+		if state, ok := circuitStates[b.Address]; ok {
+			entry["circuit_state"] = state
+		}
+		backends[i] = entry
 	}
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"backends": backends})
+}
+
+// handleDashboard serves a lightweight, read-only static page (no auth,
+// same as /health and /backends) that polls the existing JSON endpoints
+// client-side. Not a management UI — no write actions are exposed here.
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(dashboardHTML)
 }
 
 func (s *Server) handleAddBackend(w http.ResponseWriter, r *http.Request) {

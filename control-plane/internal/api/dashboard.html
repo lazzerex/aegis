@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aegis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --border: #262b33;
+    --text: #e6e9ef;
+    --muted: #8a93a3;
+    --green: #3ecf8e;
+    --red: #f2545b;
+    --amber: #f2b705;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+  }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .25rem; }
+  .sub { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .75rem;
+    margin-bottom: 1.5rem;
+    max-width: 900px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .9rem 1rem;
+  }
+  .card .label { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 1.4rem; font-weight: 600; margin-top: .2rem; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 900px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: .6rem .9rem;
+    font-size: .875rem;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 500; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+  .dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; margin-right: .4rem; }
+  .dot.up { background: var(--green); }
+  .dot.down { background: var(--red); }
+  .badge {
+    display: inline-block;
+    padding: .1rem .5rem;
+    border-radius: 999px;
+    font-size: .75rem;
+    font-weight: 600;
+  }
+  .badge.Closed { background: rgba(62,207,142,.15); color: var(--green); }
+  .badge.Open { background: rgba(242,84,91,.15); color: var(--red); }
+  .badge.HalfOpen { background: rgba(242,183,5,.15); color: var(--amber); }
+  .badge.unknown { background: rgba(138,147,163,.15); color: var(--muted); }
+  .err { color: var(--red); font-size: .85rem; margin-top: 1rem; }
+  footer { color: var(--muted); font-size: .75rem; margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+  <h1>Aegis</h1>
+  <div class="sub">Read-only status view — no controls here. Use <code>aegis-ctl</code> or the Admin API for management.</div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Version</div><div class="value" id="version">—</div></div>
+    <div class="card"><div class="label">Algorithm</div><div class="value" id="algorithm">—</div></div>
+    <div class="card"><div class="label">Backends</div><div class="value" id="backendCount">—</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Backend</th><th>Weight</th><th>Health</th><th>Circuit</th></tr>
+    </thead>
+    <tbody id="backendRows">
+      <tr><td colspan="4" class="sub">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <div id="error" class="err"></div>
+  <footer>Auto-refreshes every 3s.</footer>
+
+<script>
+async function refresh() {
+  try {
+    const [status, backends] = await Promise.all([
+      fetch('/status').then(r => r.json()),
+      fetch('/backends').then(r => r.json()),
+    ]);
+
+    document.getElementById('version').textContent = status.version || '—';
+    document.getElementById('algorithm').textContent = (status.config && status.config.algorithm) || '—';
+    document.getElementById('backendCount').textContent = (status.config && status.config.backends) ?? '—';
+
+    const rows = backends.backends || [];
+    const tbody = document.getElementById('backendRows');
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="sub">No backends configured.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(b => {
+        const healthy = !!b.healthy;
+        const circuit = b.circuit_state || 'unknown';
+        return `<tr>
+          <td>${escapeHtml(b.address)}</td>
+          <td>${escapeHtml(String(b.weight))}</td>
+          <td><span class="dot ${healthy ? 'up' : 'down'}"></span>${healthy ? 'healthy' : 'unhealthy'}</td>
+          <td><span class="badge ${escapeHtml(circuit)}">${escapeHtml(circuit)}</span></td>
+        </tr>`;
+      }).join('');
+    }
+    document.getElementById('error').textContent = '';
+  } catch (e) {
+    document.getElementById('error').textContent = 'Failed to reach Admin API: ' + e;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

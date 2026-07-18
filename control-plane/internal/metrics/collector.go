@@ -29,6 +29,10 @@ type Collector struct {
 	lastBytesReceived    float64
 	lastBackendRequests  map[string]float64
 	lastBackendFailures  map[string]float64
+
+	// Most recently reported circuit breaker state per backend, for the
+	// read-only dashboard — not a Prometheus metric, just a snapshot.
+	backendCircuitState map[string]string
 }
 
 func NewCollector() *Collector {
@@ -88,6 +92,7 @@ func NewCollector() *Collector {
 
 		lastBackendRequests: make(map[string]float64),
 		lastBackendFailures: make(map[string]float64),
+		backendCircuitState: make(map[string]string),
 	}
 }
 
@@ -132,5 +137,23 @@ func (c *Collector) UpdateFromProto(data *pb.MetricsData) {
 			c.backendFailures.WithLabelValues(addr).Add(delta)
 			c.lastBackendFailures[addr] = float64(backend.FailedRequests)
 		}
+
+		if backend.CircuitState != "" {
+			c.backendCircuitState[addr] = backend.CircuitState
+		}
 	}
+}
+
+// BackendCircuitStates returns the most recently reported circuit breaker
+// state per backend address (e.g. "Closed", "Open", "HalfOpen"). Backends
+// not yet reported (no metrics received) are simply absent from the map.
+func (c *Collector) BackendCircuitStates() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	states := make(map[string]string, len(c.backendCircuitState))
+	for k, v := range c.backendCircuitState {
+		states[k] = v
+	}
+	return states
 }
