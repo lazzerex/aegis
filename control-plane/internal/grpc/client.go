@@ -9,11 +9,14 @@ import (
 	"os"
 	"time"
 
+	"sync"
+
 	"github.com/lazzerex/aegis/control-plane/internal/config"
 	"github.com/lazzerex/aegis/control-plane/internal/metrics"
 	pb "github.com/lazzerex/aegis/control-plane/proto"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -23,6 +26,9 @@ type Client struct {
 	conn   *grpc.ClientConn
 	client pb.ProxyControlClient
 	logger *zap.Logger
+
+	cfgMu   sync.Mutex
+	lastCfg *config.Config
 }
 
 func NewClient(grpcCfg config.GRPCConfig, logger *zap.Logger) (*Client, error) {
@@ -147,6 +153,10 @@ func (c *Client) UpdateConfig(cfg *config.Config) error {
 		return fmt.Errorf("config update failed: %s", resp.Message)
 	}
 
+	c.cfgMu.Lock()
+	c.lastCfg = cfg
+	c.cfgMu.Unlock()
+
 	c.logger.Info("Configuration updated successfully", zap.String("message", resp.Message))
 	return nil
 }
@@ -205,6 +215,37 @@ func (c *Client) DrainConnections(ctx context.Context, timeoutSeconds int) error
 		zap.Bool("success", resp.Success),
 		zap.Int32("count", resp.ConnectionsDrained))
 	return nil
+}
+
+// WatchReconnect watches the gRPC connection state and re-pushes the last
+// known-good config whenever the connection transitions back to Ready after
+// having dropped. This covers the case where the data plane process restarts
+// independently (crash, OOM, pod eviction): it comes back with no config and
+// would otherwise sit idle forever, since only the metrics stream previously
+// had reconnect handling.
+func (c *Client) WatchReconnect() {
+	go func() {
+		state := c.conn.GetState()
+		wasReady := state == connectivity.Ready
+		for {
+			if !c.conn.WaitForStateChange(context.Background(), state) {
+				return
+			}
+			state = c.conn.GetState()
+			if state == connectivity.Ready && !wasReady {
+				c.cfgMu.Lock()
+				cfg := c.lastCfg
+				c.cfgMu.Unlock()
+				if cfg != nil {
+					c.logger.Info("gRPC connection to data plane re-established, re-pushing config")
+					if err := c.UpdateConfig(cfg); err != nil {
+						c.logger.Error("Failed to re-push config after reconnect", zap.Error(err))
+					}
+				}
+			}
+			wasReady = state == connectivity.Ready
+		}
+	}()
 }
 
 func (c *Client) StreamMetrics(collector *metrics.Collector) {
