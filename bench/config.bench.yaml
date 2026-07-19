@@ -1,0 +1,36 @@
+proxy:
+  listen:
+    tcp: "0.0.0.0:8080"
+    udp: "0.0.0.0:8081"
+
+  backends:
+    - address: "nginx:80"
+      weight: 100
+      health_check:
+        interval: 5s
+        timeout: 2s
+        path: "/"
+
+  load_balancing:
+    algorithm: "round_robin"
+    session_affinity: false
+
+  traffic:
+    rate_limit:
+      requests_per_second: 1000000
+      burst: 1000000
+    timeout:
+      connect: 5s
+      idle: 60s
+      read: 30s
+
+  circuit_breaker:
+    error_threshold: 1000
+    timeout: 30s
+
+admin:
+  api_address: "0.0.0.0:9090"
+  metrics_address: "0.0.0.0:9091"
+
+grpc:
+  control_plane_address: "data-plane:50051"

@@ -1,0 +1,39 @@
+version: '3.8'
+
+# Benchmark harness: isolated from the main docker-compose.yml (different
+# ports/project name) so it can run side-by-side with a dev stack.
+#
+# Topology:
+#   wrk -> nginx            (baseline, no proxy)
+#   wrk -> data-plane -> nginx   (through Aegis)
+#
+# nginx is the backend for both arms so the only variable being measured
+# is the overhead Aegis adds, not backend performance.
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "18081:80"
+
+  data-plane:
+    build:
+      context: ..
+      dockerfile: Dockerfile.data
+    ports:
+      - "18080:8080"     # TCP proxy (benchmark target)
+      - "19100:9100"     # direct data-plane metrics
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: Dockerfile.control
+    volumes:
+      - ./config.bench.yaml:/app/config.yaml:ro
+    ports:
+      - "19090:9090"
+      - "19091:9091"
+    depends_on:
+      - data-plane
+      - nginx
+    command: ["--config", "/app/config.yaml"]
