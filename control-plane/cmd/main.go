@@ -58,6 +58,9 @@ func main() {
 		logger.Fatal("Failed to send initial config to data plane", zap.Error(err))
 	}
 
+	// Re-push config if the data plane restarts independently and reconnects
+	grpcClient.WatchReconnect()
+
 	// Initialize health checker
 	healthChecker := health.NewChecker(cfg, grpcClient, logger)
 	healthChecker.Start()
