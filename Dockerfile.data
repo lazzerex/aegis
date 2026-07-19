@@ -11,7 +11,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 COPY proto/ /proto/
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+RUN RUSTFLAGS='-C target-feature=+crt-static' cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
 COPY data-plane/ .
 RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && \
     strip target/x86_64-unknown-linux-musl/release/aegis-data
