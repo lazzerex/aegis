@@ -29,7 +29,7 @@ struct PooledConn {
 /// a *different* client mid-session — that would require parsing the
 /// backend protocol (PgBouncer-style pooling), which is out of scope here.
 pub struct ConnectionPool {
-    pools: DashMap<String, Mutex<VecDeque<PooledConn>>>,
+    pools: DashMap<String, Arc<Mutex<VecDeque<PooledConn>>>>,
     target_size: usize,
 }
 
@@ -45,7 +45,12 @@ impl ConnectionPool {
     /// and not too old. Returns `None` on a pool miss — callers must fall
     /// back to dialing fresh.
     pub async fn take(&self, backend_addr: &str) -> Option<TcpStream> {
-        let queue = self.pools.get(backend_addr)?;
+        // Clone the Arc out and drop the DashMap shard guard immediately —
+        // it must never be held across the `.lock().await` below, or a
+        // concurrent `refill_once` holding the same shard guard across its
+        // own `TcpStream::connect().await` would deadlock the whole runtime
+        // (DashMap's per-shard lock is a plain sync lock, not tokio-aware).
+        let queue = self.pools.get(backend_addr)?.clone();
         let mut queue = queue.lock().await;
         while let Some(conn) = queue.pop_front() {
             if conn.created_at.elapsed() < MAX_IDLE_AGE {
@@ -84,13 +89,17 @@ impl ConnectionPool {
             .retain(|addr, _| healthy_set.contains(addr.as_str()));
 
         for addr in &healthy {
-            let queue_entry = self
+            // Clone the Arc and let the DashMap entry guard drop at the end
+            // of this statement — it must not be held across the
+            // `TcpStream::connect().await` below (see `take()` for why).
+            let queue_arc = self
                 .pools
                 .entry(addr.clone())
-                .or_insert_with(|| Mutex::new(VecDeque::new()));
+                .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
+                .clone();
 
             let deficit = {
-                let queue = queue_entry.lock().await;
+                let queue = queue_arc.lock().await;
                 self.target_size.saturating_sub(queue.len())
             };
 
@@ -103,7 +112,7 @@ impl ConnectionPool {
 
                 match connect {
                     Ok(Ok(stream)) => {
-                        let mut queue = queue_entry.lock().await;
+                        let mut queue = queue_arc.lock().await;
                         queue.push_back(PooledConn {
                             stream,
                             created_at: Instant::now(),
