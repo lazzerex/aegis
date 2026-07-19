@@ -846,22 +846,31 @@ ab -n 10000 -c 100 http://localhost:8080/
 
 ### Performance Benchmarks
 
-Expected performance targets:
+`bench/run-bench.sh` benchmarks Aegis against a raw nginx baseline: the
+same nginx instance backs both arms, so the only variable is the overhead
+Aegis itself adds. It builds an isolated stack and runs `wrk` (via the
+`williamyeh/wrk` Docker image — no local install needed) directly against
+nginx, then again through the Aegis TCP proxy.
 
-- **TCP Throughput**: 10Gbps+ on modern hardware
-- **UDP Packet Rate**: 1M+ packets/sec
-- **Latency Overhead**: <1ms p99
-- **Memory Usage**: <50MB under load
-- **Connection Capacity**: 100K+ concurrent connections
-
-Test with:
 ```bash
-# TCP throughput
-iperf3 -c localhost -p 8080
-
-# Custom UDP load generator (to be implemented)
-# Monitor with: watch -n 1 'curl -s http://localhost:9091/metrics | grep proxy_'
+./bench/run-bench.sh [duration] [connections] [threads]
+# defaults: 15s 100 4
 ```
+
+**Measured (15s / 100 connections / 4 threads, single-vCPU sandbox — see
+caveat below):**
+
+| | direct → nginx | through Aegis | delta |
+|---|---|---|---|
+| Requests/sec | 4513.18 | 3270.96 | -27.5% |
+| Latency p50 | 19.80ms | 23.38ms | +18% |
+| Latency p90 | 33.54ms | 60.10ms | +79% |
+| Latency p99 | 61.95ms | 73.29ms | +18% |
+
+This ran on a 1-vCPU sandbox shared across nginx, the load generator, and
+both Aegis processes — treat the absolute numbers as sandbox-limited and
+the direct-vs-Aegis ratio as the meaningful, directional signal, not a
+formal SLA.
 
 ## Monitoring
 
