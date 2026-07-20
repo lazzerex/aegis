@@ -55,6 +55,61 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if b.HealthCheck.Timeout != 2*time.Second {
 		t.Errorf("health timeout default: got %v, want 2s", b.HealthCheck.Timeout)
 	}
+	if b.HealthCheck.Scheme != "http" {
+		t.Errorf("health scheme default: got %q, want %q", b.HealthCheck.Scheme, "http")
+	}
+}
+
+func TestLoad_HealthCheckSchemeHTTPS(t *testing.T) {
+	yaml := `
+proxy:
+  listen:
+    tcp: "0.0.0.0:8080"
+  backends:
+    - address: "backend.example.com:443"
+      health_check:
+        scheme: "https"
+  load_balancing: {}
+admin:
+  api_address: "0.0.0.0:9090"
+  metrics_address: "0.0.0.0:9091"
+grpc:
+  control_plane_address: "localhost:50051"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Proxy.Backends[0].HealthCheck.Scheme; got != "https" {
+		t.Errorf("health scheme: got %q, want %q", got, "https")
+	}
+}
+
+func TestLoad_InvalidHealthCheckSchemeRejected(t *testing.T) {
+	yaml := `
+proxy:
+  listen:
+    tcp: "0.0.0.0:8080"
+  backends:
+    - address: "backend.example.com:443"
+      health_check:
+        scheme: "ftp"
+  load_balancing: {}
+admin:
+  api_address: "0.0.0.0:9090"
+  metrics_address: "0.0.0.0:9091"
+grpc:
+  control_plane_address: "localhost:50051"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid health_check.scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), `health_check.scheme must be "http" or "https"`) {
+		t.Errorf("error missing scheme complaint, got: %v", err)
+	}
 }
 
 func TestLoad_UDPBackendsGetDefaults(t *testing.T) {
