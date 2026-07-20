@@ -39,6 +39,7 @@ type HealthCheckConfig struct {
 	Interval time.Duration `yaml:"interval"`
 	Timeout  time.Duration `yaml:"timeout"`
 	Path     string        `yaml:"path"`
+	Scheme   string        `yaml:"scheme"`
 }
 
 type LoadBalancingConfig struct {
@@ -104,6 +105,9 @@ func Load(filename string) (*Config, error) {
 		}
 		if cfg.Proxy.Backends[i].HealthCheck.Timeout == 0 {
 			cfg.Proxy.Backends[i].HealthCheck.Timeout = 2 * time.Second
+		}
+		if cfg.Proxy.Backends[i].HealthCheck.Scheme == "" {
+			cfg.Proxy.Backends[i].HealthCheck.Scheme = "http"
 		}
 	}
 
@@ -195,6 +199,9 @@ func validateBackends(field string, backends []Backend) []string {
 		seen[b.Address] = true
 		if b.Weight < 0 {
 			errs = append(errs, fmt.Sprintf("%s[%d] (%s): weight must be >= 0", field, i, b.Address))
+		}
+		if s := b.HealthCheck.Scheme; s != "" && s != "http" && s != "https" {
+			errs = append(errs, fmt.Sprintf("%s[%d] (%s): health_check.scheme must be \"http\" or \"https\", got %q", field, i, b.Address, s))
 		}
 	}
 	return errs
