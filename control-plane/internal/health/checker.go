@@ -109,9 +109,13 @@ func (c *Checker) checkBackend(backend config.Backend) {
 }
 
 func (c *Checker) performHealthCheck(client *http.Client, backend config.Backend) bool {
-	url := fmt.Sprintf("http://%s%s", backend.Address, backend.HealthCheck.Path)
+	scheme := backend.HealthCheck.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	url := fmt.Sprintf("%s://%s%s", scheme, backend.Address, backend.HealthCheck.Path)
 	if backend.HealthCheck.Path == "" {
-		url = fmt.Sprintf("http://%s/", backend.Address)
+		url = fmt.Sprintf("%s://%s/", scheme, backend.Address)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), backend.HealthCheck.Timeout)
