@@ -1,6 +1,9 @@
 package health
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,6 +85,67 @@ func TestUpdateHealthState_CallsReloaderOnChange(t *testing.T) {
 
 	if mock.callCount.Load() != 2 {
 		t.Errorf("ReloadBackendsWithHealth called %d times, want 2", mock.callCount.Load())
+	}
+}
+
+func TestPerformHealthCheck_HTTPScheme(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newTestChecker(&mockReloader{})
+	backend := config.Backend{
+		Address:     strings.TrimPrefix(srv.URL, "http://"),
+		HealthCheck: config.HealthCheckConfig{Timeout: 2 * time.Second, Scheme: "http"},
+	}
+
+	if !c.performHealthCheck(srv.Client(), backend) {
+		t.Error("expected health check to succeed against a plain HTTP server with scheme=http")
+	}
+}
+
+func TestPerformHealthCheck_EmptySchemeDefaultsToHTTP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newTestChecker(&mockReloader{})
+	backend := config.Backend{
+		Address:     strings.TrimPrefix(srv.URL, "http://"),
+		HealthCheck: config.HealthCheckConfig{Timeout: 2 * time.Second},
+	}
+
+	if !c.performHealthCheck(srv.Client(), backend) {
+		t.Error("expected empty scheme to default to http")
+	}
+}
+
+func TestPerformHealthCheck_HTTPSScheme(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newTestChecker(&mockReloader{})
+	address := strings.TrimPrefix(srv.URL, "https://")
+
+	httpsBackend := config.Backend{
+		Address:     address,
+		HealthCheck: config.HealthCheckConfig{Timeout: 2 * time.Second, Scheme: "https"},
+	}
+	if !c.performHealthCheck(srv.Client(), httpsBackend) {
+		t.Error("expected health check to succeed against a TLS server with scheme=https")
+	}
+
+	// proves scheme actually drives the request, not just defaulting to http
+	httpBackend := config.Backend{
+		Address:     address,
+		HealthCheck: config.HealthCheckConfig{Timeout: 2 * time.Second, Scheme: "http"},
+	}
+	if c.performHealthCheck(srv.Client(), httpBackend) {
+		t.Error("expected health check with scheme=http to fail against a TLS-only server")
 	}
 }
 
