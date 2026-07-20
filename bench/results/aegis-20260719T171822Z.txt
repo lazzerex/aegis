@@ -1,0 +1,13 @@
+Running 15s test @ http://data-plane:8080/
+  4 threads and 100 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    30.91ms   17.11ms 123.68ms   76.01%
+    Req/Sec   823.80    151.74     1.25k    77.01%
+  Latency Distribution
+     50%   23.38ms
+     75%   36.78ms
+     90%   60.10ms
+     99%   73.29ms
+  49160 requests in 15.03s, 53.17MB read
+Requests/sec:   3270.96
+Transfer/sec:      3.54MB
