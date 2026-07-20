@@ -57,6 +57,7 @@ Aegis is designed for production use in microservice architectures and backend i
 - [Quick Start](#quick-start)
 - [Features](#features)
 - [Architecture](#architecture)
+- [Design Decisions](#design-decisions)
 - [Installation](#installation)
 - [Running Aegis](#running-aegis)
   - [Local Development with Make](#local-development-with-make)
@@ -235,6 +236,10 @@ make run-control
                    Backends
               (NestJS/Any HTTP Service)
 ```
+
+## Design Decisions
+
+Why Go + Rust instead of one language, why gRPC instead of shared memory, why this concurrency model, why these load balancing algorithms, why v1 doesn't horizontally scale yet — each with alternatives considered and the trade-offs actually accepted, not just what shipped: [`docs/decisions/`](docs/decisions/).
 
 ## Installation
 
