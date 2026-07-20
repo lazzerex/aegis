@@ -362,3 +362,116 @@ impl Drop for ConnectionGuard {
         self.state.unregister_connection(self.conn_id);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Backend;
+    use std::time::Duration;
+
+    fn test_proxy_config(read_timeout_secs: i32) -> crate::config::ProxyConfig {
+        crate::config::ProxyConfig {
+            tcp_address: "0.0.0.0:0".to_string(),
+            udp_address: "0.0.0.0:0".to_string(),
+            backends: vec![],
+            udp_backends: vec![],
+            algorithm: "round_robin".to_string(),
+            session_affinity: false,
+            rate_limit_rps: 1000,
+            rate_limit_burst: 100,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 60,
+            read_timeout_secs,
+            circuit_breaker_threshold: 5,
+            circuit_breaker_timeout_secs: 30,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_success_records_circuit_breaker_success() {
+        let backend_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend_listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let (_stream, _) = backend_listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+
+        let client_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client_listener_addr = client_listener.local_addr().unwrap();
+        let connect_task = tokio::spawn(async move {
+            let stream = TcpStream::connect(client_listener_addr).await.unwrap();
+            drop(stream); // clean EOF from the "client" side
+        });
+        let (client_stream, _) = client_listener.accept().await.unwrap();
+        connect_task.await.unwrap();
+
+        let state = Arc::new(ProxyState::new());
+        state.circuit_breaker.read().record_failure(&backend_addr); // seed nonzero count
+
+        let lb = Arc::new(LoadBalancer::new(
+            vec![Backend {
+                address: backend_addr.clone(),
+                weight: 100,
+                healthy: true,
+            }],
+            "round_robin".to_string(),
+        ));
+        let pool = ConnectionPool::new(0);
+
+        handle_connection(client_stream, state.clone(), lb, test_proxy_config(0), pool)
+            .await
+            .unwrap();
+
+        let states = state.circuit_breaker.read().get_all_states();
+        assert_eq!(
+            states[&backend_addr].1, 0,
+            "record_success must reset failure_count"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_failure_records_circuit_breaker_failure() {
+        let backend_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend_listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let (stream, _) = backend_listener.accept().await.unwrap();
+            // deprecated (blocks on drop, fine on loopback) but the only stable
+            // way to force an RST without adding socket2 for one test
+            #[allow(deprecated)]
+            stream.set_linger(Some(Duration::ZERO)).unwrap();
+            drop(stream);
+        });
+
+        let client_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client_listener_addr = client_listener.local_addr().unwrap();
+        let connect_task = tokio::spawn(async move {
+            let stream = TcpStream::connect(client_listener_addr).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await; // held open past the reset
+            drop(stream);
+        });
+        let (client_stream, _) = client_listener.accept().await.unwrap();
+
+        let state = Arc::new(ProxyState::new());
+        let lb = Arc::new(LoadBalancer::new(
+            vec![Backend {
+                address: backend_addr.clone(),
+                weight: 100,
+                healthy: true,
+            }],
+            "round_robin".to_string(),
+        ));
+        let pool = ConnectionPool::new(0);
+
+        handle_connection(client_stream, state.clone(), lb, test_proxy_config(0), pool)
+            .await
+            .unwrap();
+
+        let states = state.circuit_breaker.read().get_all_states();
+        assert_eq!(
+            states[&backend_addr].1, 1,
+            "record_failure must fire on backend reset"
+        );
+
+        connect_task.abort();
+    }
+}
