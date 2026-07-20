@@ -217,17 +217,18 @@ func (c *Client) DrainConnections(ctx context.Context, timeoutSeconds int) error
 	return nil
 }
 
-// WatchReconnect watches the gRPC connection state and re-pushes the last
-// known-good config whenever the connection transitions back to Ready after
-// having dropped. This covers the case where the data plane process restarts
-// independently (crash, OOM, pod eviction): it comes back with no config and
-// would otherwise sit idle forever, since only the metrics stream previously
-// had reconnect handling.
+// WatchReconnect re-pushes the last known-good config on reconnect.
+// grpc.NewClient drops an idle conn to Idle instead of auto-retrying (gRFC
+// A62), so Connect() must be called explicitly — checked every loop, not
+// just after a change, in case the conn is already Idle when this starts.
 func (c *Client) WatchReconnect() {
 	go func() {
 		state := c.conn.GetState()
 		wasReady := state == connectivity.Ready
 		for {
+			if state == connectivity.Idle {
+				c.conn.Connect()
+			}
 			if !c.conn.WaitForStateChange(context.Background(), state) {
 				return
 			}
