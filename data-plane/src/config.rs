@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Notify;
 
 use crate::circuit_breaker::CircuitBreakerManager;
@@ -72,10 +73,16 @@ impl ProxyState {
     }
 
     pub fn update_config(&self, config: ProxyConfig) {
-        let circuit_breaker = Arc::new(CircuitBreakerManager::new(
-            config.circuit_breaker_threshold,
-            config.circuit_breaker_timeout_secs,
-        ));
+        let new_cb_timeout = Duration::from_secs(config.circuit_breaker_timeout_secs as u64);
+        let current_cb = self.circuit_breaker.read().clone();
+        if current_cb.error_threshold() != config.circuit_breaker_threshold
+            || current_cb.timeout() != new_cb_timeout
+        {
+            *self.circuit_breaker.write() = Arc::new(CircuitBreakerManager::new(
+                config.circuit_breaker_threshold,
+                config.circuit_breaker_timeout_secs,
+            ));
+        }
         let rate_limiter = Arc::new(RateLimiter::new(
             config.rate_limit_rps as u64,
             config.rate_limit_burst as u64,
@@ -89,7 +96,6 @@ impl ProxyState {
             config.algorithm.clone(),
         ));
 
-        *self.circuit_breaker.write() = circuit_breaker;
         *self.rate_limiter.write() = rate_limiter;
         *self.tcp_lb.write() = tcp_lb;
         *self.udp_lb.write() = udp_lb;
@@ -219,5 +225,25 @@ mod tests {
 
         // Final state must reflect the last applied config.
         assert!(state.get_config().is_some());
+    }
+
+    #[test]
+    fn test_backend_reload_preserves_circuit_breaker_state() {
+        let state = ProxyState::new();
+        state.update_config(test_config("backend-cb-reload-test:9999"));
+
+        let cb = state.circuit_breaker.read().clone();
+        cb.record_failure("backend-cb-reload-test:9999");
+        cb.record_failure("backend-cb-reload-test:9999");
+        cb.record_failure("backend-cb-reload-test:9999");
+
+        state.update_config(test_config("backend-cb-reload-test-2:9999"));
+
+        let cb_after_reload = state.circuit_breaker.read().clone();
+        let (_, failure_count) = cb_after_reload.get_all_states()["backend-cb-reload-test:9999"];
+        assert_eq!(
+            failure_count, 3,
+            "reloading the backend list must not reset an in-progress circuit breaker count"
+        );
     }
 }
