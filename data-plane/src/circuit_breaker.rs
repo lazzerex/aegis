@@ -232,7 +232,11 @@ impl CircuitBreakerManager {
         Self::new_with_state_file(error_threshold, timeout_secs, state_file)
     }
 
-    fn new_with_state_file(error_threshold: u32, timeout_secs: u32, state_file: String) -> Self {
+    pub fn new_with_state_file(
+        error_threshold: u32,
+        timeout_secs: u32,
+        state_file: String,
+    ) -> Self {
         let timeout = Duration::from_secs(timeout_secs as u64);
         let breakers = load_persisted(&state_file, error_threshold, timeout);
         Self {
@@ -282,6 +286,14 @@ impl CircuitBreakerManager {
         if breaker.state() != before {
             persist(&self.state_file, &breakers);
         }
+    }
+
+    pub fn error_threshold(&self) -> u32 {
+        self.error_threshold
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     /// Get state of specific backend circuit breaker
