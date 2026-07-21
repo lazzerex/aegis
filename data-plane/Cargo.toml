@@ -24,3 +24,11 @@ prometheus = "0.13"
 
 [build-dependencies]
 tonic-build = "0.10"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+
+[[bench]]
+name = "hot_path"
+harness = false
