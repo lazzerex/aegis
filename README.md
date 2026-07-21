@@ -877,6 +877,17 @@ both Aegis processes — treat the absolute numbers as sandbox-limited and
 the direct-vs-Aegis ratio as the meaningful, directional signal, not a
 formal SLA.
 
+Per-function profiling (pprof/flamegraph/criterion, Go + Rust) — what
+actually costs time inside Aegis, not just the end-to-end number above:
+[`docs/profiling/PROFILING.md`](docs/profiling/PROFILING.md).
+
+### Failure Testing
+
+A live backend crash against the real docker-compose stack — circuit
+breaker, health checker, and a real cross-component gap the two surfaced
+together: [`bench/FAILURE_TESTING.md`](bench/FAILURE_TESTING.md). Reproduce
+with `./scripts/failure-demo.sh`.
+
 ## Monitoring
 
 Aegis provides comprehensive observability through Prometheus metrics and Grafana dashboards.
@@ -1299,12 +1310,15 @@ protoc-gen-go --version
 - [x] Config validation on load/reload
 - [x] Direct Prometheus scrape on the data plane (independent of control plane)
 - [x] Read-only admin dashboard (`GET /dashboard`)
+- [x] Circuit breaker state persistence across restarts/reloads
+- [x] Per-function profiling evidence (pprof, criterion, flamegraphs)
+- [x] Live failure-injection demo (backend crash, health checker + circuit breaker)
 - [ ] Zero-downtime reload (preserve active connections)
 - [ ] HTTP/2 support
 - [ ] Distributed tracing
 - [ ] Kubernetes service discovery (auto-register backends from Service endpoints)
 - [ ] Redis-backed multi-instance coordination (circuit breaker state)
-- [ ] Circuit breaker state persistence across restarts/reloads
+- [x] Circuit breaker state reset on unrelated backend health-check reloads (see `bench/FAILURE_TESTING.md` Finding 2, fixed — `TASK.md`)
 
 ## Contributing
 
