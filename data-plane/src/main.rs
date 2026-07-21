@@ -2,20 +2,9 @@ use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info};
 
-mod access_log;
-mod circuit_breaker;
-mod config;
-mod connection;
-mod grpc_server;
-mod load_balancer;
-mod metrics;
-mod metrics_server;
-mod rate_limiter;
-mod tcp_proxy;
-mod udp_proxy;
-
-use config::ProxyState;
-use grpc_server::ProxyControlService;
+use aegis_data::config::ProxyState;
+use aegis_data::grpc_server::ProxyControlService;
+use aegis_data::{connection, metrics_server, tcp_proxy, udp_proxy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
