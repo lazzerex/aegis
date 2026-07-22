@@ -1,6 +1,6 @@
-.PHONY: all build build-go build-rust proto \
+.PHONY: all build build-go build-rust build-tui proto \
         test test-unit test-integration test-proxy test-advanced test-udp \
-        run run-control run-data \
+        run run-control run-data run-tui \
         backends-start backends-stop backends-status \
         udp-backends-start udp-backends-stop \
         check fmt lint \
@@ -12,6 +12,7 @@ PROTO_DIR    := proto
 GO_OUT       := control-plane/proto
 CONTROL_BIN  := control-plane/aegis-control
 CTL_BIN      := control-plane/aegis-ctl
+TUI_BIN      := control-plane/aegis-tui
 DATA_BIN     := data-plane/target/release/aegis-data
 
 # ── Top-level aliases ─────────────────────────────────────────────────────────
@@ -43,6 +44,10 @@ build-go: proto
 build-rust:
 	cd data-plane && cargo build --release
 	@echo "data plane:    $(DATA_BIN)"
+
+build-tui:
+	cd control-plane && go build -o aegis-tui ./cmd/aegis-tui
+	@echo "tui:           $(TUI_BIN)"
 
 # ── Test ─────────────────────────────────────────────────────────────────────
 
@@ -79,6 +84,10 @@ run-data:
 run-control:
 	@test -f "$(CONTROL_BIN)" || { echo "Not built. Run: make build-go"; exit 1; }
 	./$(CONTROL_BIN) --config config.yaml
+
+run-tui:
+	@test -f "$(TUI_BIN)" || { echo "Not built. Run: make build-tui"; exit 1; }
+	./$(TUI_BIN)
 
 # ── Test backends ─────────────────────────────────────────────────────────────
 
