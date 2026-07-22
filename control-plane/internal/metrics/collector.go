@@ -33,6 +33,15 @@ type Collector struct {
 	// Most recently reported circuit breaker state per backend, for the
 	// read-only dashboard — not a Prometheus metric, just a snapshot.
 	backendCircuitState map[string]string
+
+	backendStats map[string]BackendStat
+}
+
+type BackendStat struct {
+	ActiveConnections int64
+	TotalRequests     int64
+	FailedRequests    int64
+	AvgLatencyMs      float64
 }
 
 func NewCollector() *Collector {
@@ -93,6 +102,7 @@ func NewCollector() *Collector {
 		lastBackendRequests: make(map[string]float64),
 		lastBackendFailures: make(map[string]float64),
 		backendCircuitState: make(map[string]string),
+		backendStats:        make(map[string]BackendStat),
 	}
 }
 
@@ -141,6 +151,13 @@ func (c *Collector) UpdateFromProto(data *pb.MetricsData) {
 		if backend.CircuitState != "" {
 			c.backendCircuitState[addr] = backend.CircuitState
 		}
+
+		c.backendStats[addr] = BackendStat{
+			ActiveConnections: backend.ActiveConnections,
+			TotalRequests:     backend.TotalRequests,
+			FailedRequests:    backend.FailedRequests,
+			AvgLatencyMs:      backend.AvgLatencyMs,
+		}
 	}
 }
 
@@ -156,4 +173,15 @@ func (c *Collector) BackendCircuitStates() map[string]string {
 		states[k] = v
 	}
 	return states
+}
+
+func (c *Collector) BackendStats() map[string]BackendStat {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	stats := make(map[string]BackendStat, len(c.backendStats))
+	for k, v := range c.backendStats {
+		stats[k] = v
+	}
+	return stats
 }
