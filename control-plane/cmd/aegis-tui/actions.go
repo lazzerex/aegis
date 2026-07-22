@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,10 @@ import (
 const (
 	tcpBurstCount = 300
 	udpBurstCount = 20
+
+	grafanaURL    = "http://localhost:3030"
+	prometheusURL = "http://localhost:9092"
+	dashboardURL  = "http://localhost:9090/dashboard"
 )
 
 type actionResultMsg struct {
@@ -127,6 +132,31 @@ func runUDPBurstCmd(udpAddr string) tea.Cmd {
 	}
 }
 
+func browserOpenArgs(goos, url string) []string {
+	switch goos {
+	case "darwin":
+		return []string{"open", url}
+	case "windows":
+		return []string{"rundll32", "url.dll,FileProtocolHandler", url}
+	default:
+		return []string{"xdg-open", url}
+	}
+}
+
+func openBrowser(url string) error {
+	args := browserOpenArgs(runtime.GOOS, url)
+	return exec.Command(args[0], args[1:]...).Start()
+}
+
+func runOpenCmd(label, url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := openBrowser(url); err != nil {
+			return actionResultMsg{label: label, err: err}
+		}
+		return actionResultMsg{label: label}
+	}
+}
+
 func actionForKey(key string, m Model) (tea.Cmd, bool) {
 	switch key {
 	case "1":
@@ -145,6 +175,12 @@ func actionForKey(key string, m Model) (tea.Cmd, bool) {
 		return runTCPBurstCmd(m.proxyURL), true
 	case "8":
 		return runUDPBurstCmd(m.udpAddr), true
+	case "g":
+		return runOpenCmd("opened Grafana", grafanaURL), true
+	case "m":
+		return runOpenCmd("opened Prometheus", prometheusURL), true
+	case "d":
+		return runOpenCmd("opened admin dashboard", dashboardURL), true
 	}
 	return nil, false
 }
@@ -167,6 +203,12 @@ func actionPendingLabel(key string) (string, bool) {
 		return "[you] firing TCP burst", true
 	case "8":
 		return "[you] firing UDP burst", true
+	case "g":
+		return "[you] opening Grafana", true
+	case "m":
+		return "[you] opening Prometheus", true
+	case "d":
+		return "[you] opening admin dashboard", true
 	}
 	return "", false
 }
