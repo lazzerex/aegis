@@ -1,7 +1,7 @@
 import argparse
 import json
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 
@@ -112,7 +112,7 @@ def main():
     args = parser.parse_args()
     
     HealthCheckHandler.server_name = args.name
-    server = HTTPServer((args.host, args.port), HealthCheckHandler)
+    server = ThreadingHTTPServer((args.host, args.port), HealthCheckHandler)
     server.start_time = time.time()
     
     print(f"╔{'═' * 58}╗")
