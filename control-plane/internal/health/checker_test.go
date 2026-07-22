@@ -1,6 +1,7 @@
 package health
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -146,6 +147,59 @@ func TestPerformHealthCheck_HTTPSScheme(t *testing.T) {
 	}
 	if c.performHealthCheck(srv.Client(), httpBackend) {
 		t.Error("expected health check with scheme=http to fail against a TLS-only server")
+	}
+}
+
+func TestPerformUDPProbe_HealthyWhenBackendResponds(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	go func() {
+		buf := make([]byte, 64)
+		n, clientAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		conn.WriteToUDP(buf[:n], clientAddr)
+	}()
+
+	c := newTestChecker(&mockReloader{})
+	backend := config.Backend{
+		Address:     conn.LocalAddr().String(),
+		HealthCheck: config.HealthCheckConfig{Timeout: 2 * time.Second},
+	}
+
+	if !c.performUDPProbe(backend) {
+		t.Error("expected healthy against a UDP backend that echoes the probe")
+	}
+}
+
+func TestPerformUDPProbe_UnhealthyWhenNoResponse(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	c := newTestChecker(&mockReloader{})
+	backend := config.Backend{
+		Address:     conn.LocalAddr().String(),
+		HealthCheck: config.HealthCheckConfig{Timeout: 200 * time.Millisecond},
+	}
+
+	if c.performUDPProbe(backend) {
+		t.Error("expected unhealthy against a UDP socket that never responds")
 	}
 }
 

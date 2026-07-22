@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lazzerex/aegis/control-plane/internal/config"
+	"github.com/lazzerex/aegis/control-plane/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -43,6 +44,14 @@ type mockHealth struct {
 
 func (m *mockHealth) GetHealthState() map[string]bool { return m.state }
 func (m *mockHealth) Reload(_ *config.Config)         { m.reloadCalls++ }
+
+type mockCircuitStates struct {
+	states map[string]string
+	stats  map[string]metrics.BackendStat
+}
+
+func (m *mockCircuitStates) BackendCircuitStates() map[string]string      { return m.states }
+func (m *mockCircuitStates) BackendStats() map[string]metrics.BackendStat { return m.stats }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -137,6 +146,133 @@ func TestHandleListBackends(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&resp)
 	if len(resp.Backends) != 2 {
 		t.Fatalf("expected 2 backends, got %d", len(resp.Backends))
+	}
+}
+
+func TestHandleStatus_IncludesSessionAffinity(t *testing.T) {
+	s := testServer(&mockGRPC{}, &mockHealth{state: map[string]bool{}}, "")
+	s.config.Proxy.LoadBalancing.SessionAffinity = true
+
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	rec := httptest.NewRecorder()
+	s.handleStatus(rec, req)
+
+	var resp struct {
+		Config struct {
+			SessionAffinity bool `json:"session_affinity"`
+		} `json:"config"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if !resp.Config.SessionAffinity {
+		t.Error("expected session_affinity: true in /status response")
+	}
+}
+
+func TestHandleListBackends_IncludesUDPBackends(t *testing.T) {
+	h := &mockHealth{state: map[string]bool{
+		"localhost:3000":    true,
+		"localhost:3001":    false,
+		"udp-backend1:5000": true,
+	}}
+	s := testServer(&mockGRPC{}, h, "")
+	s.config.Proxy.UdpBackends = []config.Backend{
+		{Address: "udp-backend1:5000", Weight: 100},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/backends", nil)
+	rec := httptest.NewRecorder()
+	s.handleListBackends(rec, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	backends := resp["backends"].([]interface{})
+	if len(backends) != 2 {
+		t.Fatalf("expected 2 TCP backends, got %d", len(backends))
+	}
+
+	udpBackends, ok := resp["udp_backends"].([]interface{})
+	if !ok {
+		t.Fatal("udp_backends missing from response")
+	}
+	if len(udpBackends) != 1 {
+		t.Fatalf("expected 1 UDP backend, got %d", len(udpBackends))
+	}
+	entry := udpBackends[0].(map[string]interface{})
+	if entry["address"] != "udp-backend1:5000" {
+		t.Errorf("address: got %v, want udp-backend1:5000", entry["address"])
+	}
+	if entry["healthy"] != true {
+		t.Errorf("healthy: got %v, want true", entry["healthy"])
+	}
+}
+
+func TestHandleListBackends_OmitsStatsWhenProviderAbsent(t *testing.T) {
+	h := &mockHealth{state: map[string]bool{"localhost:3000": true, "localhost:3001": false}}
+	s := testServer(&mockGRPC{}, h, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/backends", nil)
+	rec := httptest.NewRecorder()
+	s.handleListBackends(rec, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	backends := resp["backends"].([]interface{})
+	first := backends[0].(map[string]interface{})
+	if _, ok := first["circuit_state"]; ok {
+		t.Error("circuit_state should be absent when no circuitStates provider is set")
+	}
+	if _, ok := first["total_requests"]; ok {
+		t.Error("total_requests should be absent when no circuitStates provider is set")
+	}
+}
+
+func TestHandleListBackends_IncludesStatsWhenProviderPresent(t *testing.T) {
+	h := &mockHealth{state: map[string]bool{"localhost:3000": true, "localhost:3001": false}}
+	s := testServer(&mockGRPC{}, h, "")
+	s.circuitStates = &mockCircuitStates{
+		states: map[string]string{"localhost:3000": "Closed"},
+		stats: map[string]metrics.BackendStat{
+			"localhost:3000": {ActiveConnections: 3, TotalRequests: 42, FailedRequests: 1, AvgLatencyMs: 2.5},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/backends", nil)
+	rec := httptest.NewRecorder()
+	s.handleListBackends(rec, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	backends := resp["backends"].([]interface{})
+
+	var found map[string]interface{}
+	for _, b := range backends {
+		entry := b.(map[string]interface{})
+		if entry["address"] == "localhost:3000" {
+			found = entry
+		}
+	}
+	if found == nil {
+		t.Fatal("localhost:3000 not found in response")
+	}
+	if found["circuit_state"] != "Closed" {
+		t.Errorf("circuit_state: got %v, want Closed", found["circuit_state"])
+	}
+	if found["total_requests"] != float64(42) {
+		t.Errorf("total_requests: got %v, want 42", found["total_requests"])
+	}
+	if found["failed_requests"] != float64(1) {
+		t.Errorf("failed_requests: got %v, want 1", found["failed_requests"])
+	}
+
+	// localhost:3001 has no reported stats — must not appear at all.
+	for _, b := range backends {
+		entry := b.(map[string]interface{})
+		if entry["address"] == "localhost:3001" {
+			if _, ok := entry["total_requests"]; ok {
+				t.Error("localhost:3001 should have no total_requests (never reported)")
+			}
+		}
 	}
 }
 
