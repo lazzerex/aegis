@@ -64,7 +64,7 @@ func TestDetectComposeBinary_FallsBackToLegacyBinary(t *testing.T) {
 
 func TestActionForKey_KnownKeysResolve(t *testing.T) {
 	m := NewModel("http://localhost:9090", "http://localhost:9100/metrics", "http://localhost:8080/api/test", "localhost:8081")
-	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8"} {
+	for _, key := range []string{"1", "2", "3", "4", "5", "6", "7", "8", "g", "m", "d"} {
 		cmd, ok := actionForKey(key, m)
 		if !ok {
 			t.Errorf("key %q: expected a resolved action", key)
@@ -97,5 +97,29 @@ func TestActionPendingLabel_KnownKeys(t *testing.T) {
 func TestActionPendingLabel_UnknownKey(t *testing.T) {
 	if _, ok := actionPendingLabel("x"); ok {
 		t.Error("expected unknown key to not resolve to a pending label")
+	}
+}
+
+func TestBrowserOpenArgs_Darwin(t *testing.T) {
+	got := browserOpenArgs("darwin", "http://localhost:3030")
+	want := []string{"open", "http://localhost:3030"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestBrowserOpenArgs_Windows(t *testing.T) {
+	got := browserOpenArgs("windows", "http://localhost:3030")
+	want := []string{"rundll32", "url.dll,FileProtocolHandler", "http://localhost:3030"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestBrowserOpenArgs_Linux(t *testing.T) {
+	got := browserOpenArgs("linux", "http://localhost:3030")
+	want := []string{"xdg-open", "http://localhost:3030"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

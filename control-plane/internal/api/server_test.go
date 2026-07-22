@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lazzerex/aegis/control-plane/internal/config"
@@ -165,6 +166,41 @@ func TestHandleStatus_IncludesSessionAffinity(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&resp)
 	if !resp.Config.SessionAffinity {
 		t.Error("expected session_affinity: true in /status response")
+	}
+}
+
+func TestHandleStatus_IncludesRateLimitAndCircuitBreakerConfig(t *testing.T) {
+	s := testServer(&mockGRPC{}, &mockHealth{state: map[string]bool{}}, "")
+	s.config.Proxy.Traffic.RateLimit.RequestsPerSecond = 1000
+	s.config.Proxy.Traffic.RateLimit.Burst = 100
+	s.config.Proxy.CircuitBreaker.ErrorThreshold = 5
+	s.config.Proxy.CircuitBreaker.Timeout = 30 * time.Second
+
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	rec := httptest.NewRecorder()
+	s.handleStatus(rec, req)
+
+	var resp struct {
+		Config struct {
+			RateLimitRPS   int     `json:"rate_limit_rps"`
+			RateLimitBurst int     `json:"rate_limit_burst"`
+			CBThreshold    int     `json:"cb_threshold"`
+			CBTimeoutSecs  float64 `json:"cb_timeout_secs"`
+		} `json:"config"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp.Config.RateLimitRPS != 1000 {
+		t.Errorf("rate_limit_rps: got %d, want 1000", resp.Config.RateLimitRPS)
+	}
+	if resp.Config.RateLimitBurst != 100 {
+		t.Errorf("rate_limit_burst: got %d, want 100", resp.Config.RateLimitBurst)
+	}
+	if resp.Config.CBThreshold != 5 {
+		t.Errorf("cb_threshold: got %d, want 5", resp.Config.CBThreshold)
+	}
+	if resp.Config.CBTimeoutSecs != 30 {
+		t.Errorf("cb_timeout_secs: got %v, want 30", resp.Config.CBTimeoutSecs)
 	}
 }
 
