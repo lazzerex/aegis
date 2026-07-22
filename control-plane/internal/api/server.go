@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/lazzerex/aegis/control-plane/internal/config"
+	"github.com/lazzerex/aegis/control-plane/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -30,9 +31,10 @@ type healthStateTracker interface {
 }
 
 // circuitStateProvider is optional — a Server without one (e.g. in tests)
-// just omits circuit_state from backend responses.
+// just omits circuit_state and per-backend stats from backend responses.
 type circuitStateProvider interface {
 	BackendCircuitStates() map[string]string
+	BackendStats() map[string]metrics.BackendStat
 }
 
 type Server struct {
@@ -106,8 +108,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"version": "0.1.0",
 		"config": map[string]interface{}{
-			"backends":  len(s.config.Proxy.Backends),
-			"algorithm": s.config.Proxy.LoadBalancing.Algorithm,
+			"backends":         len(s.config.Proxy.Backends),
+			"algorithm":        s.config.Proxy.LoadBalancing.Algorithm,
+			"session_affinity": s.config.Proxy.LoadBalancing.SessionAffinity,
 		},
 	}
 
@@ -148,13 +151,27 @@ func (s *Server) handleListBackends(w http.ResponseWriter, r *http.Request) {
 	healthState := s.healthChecker.GetHealthState()
 
 	var circuitStates map[string]string
+	var backendStats map[string]metrics.BackendStat
 	if s.circuitStates != nil {
 		circuitStates = s.circuitStates.BackendCircuitStates()
+		backendStats = s.circuitStates.BackendStats()
 	}
 
 	s.mu.RLock()
-	backends := make([]map[string]interface{}, len(s.config.Proxy.Backends))
-	for i, b := range s.config.Proxy.Backends {
+	backends := buildBackendEntries(s.config.Proxy.Backends, healthState, circuitStates, backendStats)
+	udpBackends := buildBackendEntries(s.config.Proxy.UdpBackends, healthState, circuitStates, backendStats)
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"backends":     backends,
+		"udp_backends": udpBackends,
+	})
+}
+
+func buildBackendEntries(backends []config.Backend, healthState map[string]bool, circuitStates map[string]string, backendStats map[string]metrics.BackendStat) []map[string]interface{} {
+	entries := make([]map[string]interface{}, len(backends))
+	for i, b := range backends {
 		entry := map[string]interface{}{
 			"address": b.Address,
 			"weight":  b.Weight,
@@ -163,12 +180,15 @@ func (s *Server) handleListBackends(w http.ResponseWriter, r *http.Request) {
 		if state, ok := circuitStates[b.Address]; ok {
 			entry["circuit_state"] = state
 		}
-		backends[i] = entry
+		if stat, ok := backendStats[b.Address]; ok {
+			entry["active_connections"] = stat.ActiveConnections
+			entry["total_requests"] = stat.TotalRequests
+			entry["failed_requests"] = stat.FailedRequests
+			entry["avg_latency_ms"] = stat.AvgLatencyMs
+		}
+		entries[i] = entry
 	}
-	s.mu.RUnlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"backends": backends})
+	return entries
 }
 
 // handleDashboard serves a lightweight, read-only static page (no auth,
