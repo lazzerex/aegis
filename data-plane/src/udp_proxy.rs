@@ -222,31 +222,52 @@ pub async fn run(state: Arc<ProxyState>) -> Result<(), Box<dyn std::error::Error
 
                 state_clone.metrics.record_rate_limit_allowed();
 
+                let lb = state_clone.get_udp_lb();
+                let backend =
+                    match lb.select_backend_with_context(Some(&peer_addr.ip().to_string())) {
+                        Some(b) => b,
+                        None => {
+                            warn!(
+                                "No healthy UDP backends available, dropping packet from {}",
+                                peer_addr
+                            );
+                            return;
+                        }
+                    };
+                let resolved_backend_socket_addr: SocketAddr = match backend
+                    .address
+                    .to_socket_addrs()
+                    .ok()
+                    .and_then(|mut addrs| addrs.next())
+                {
+                    Some(addr) => addr,
+                    None => {
+                        error!(
+                            "Failed to resolve UDP backend address '{}', dropping packet from {}",
+                            backend.address, peer_addr
+                        );
+                        return;
+                    }
+                };
+
                 // Get or create session with NAT mapping
                 let (backend_socket_addr, client_addr, backend_addr_str) = {
                     let state_for_session = state_clone.clone();
-                    let lb = state_clone.get_udp_lb();
-                    let mut session = sessions_clone.entry(client_key.clone()).or_insert_with(|| {
-                        let backend = lb
-                            .select_backend_with_context(Some(&peer_addr.ip().to_string()))
-                            .expect("No healthy UDP backends available");
+                    let backend_addr_for_session = backend.address.clone();
+                    let mut session =
+                        sessions_clone.entry(client_key.clone()).or_insert_with(|| {
+                            debug!(
+                                "New UDP session: {} -> {} (NAT mapping established)",
+                                peer_addr, backend_addr_for_session
+                            );
 
-                        // Resolve backend address (supports both IP and hostname)
-                        let backend_socket_addr: SocketAddr = backend.address.to_socket_addrs()
-                            .ok()
-                            .and_then(|mut addrs| addrs.next())
-                            .unwrap_or_else(|| {
-                                error!("Failed to resolve UDP backend address '{}'", backend.address);
-                                panic!("Invalid UDP backend address format - expected 'host:port' or 'ip:port'");
-                            });
-
-                        debug!(
-                            "New UDP session: {} -> {} (NAT mapping established)",
-                            peer_addr, backend.address
-                        );
-
-                        UdpSession::new(backend.address, backend_socket_addr, peer_addr, state_for_session)
-                    });
+                            UdpSession::new(
+                                backend_addr_for_session,
+                                resolved_backend_socket_addr,
+                                peer_addr,
+                                state_for_session,
+                            )
+                        });
 
                     session.record_sent(len as u64);
                     (
