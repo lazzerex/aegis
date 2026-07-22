@@ -53,7 +53,7 @@ func renderView(m Model) string {
 	if m.showHelp {
 		return renderHelp()
 	}
-	if !m.adminEverPolled && !m.dataPlaneEverPolled {
+	if !m.splashDismissed {
 		return renderSplash(m)
 	}
 	return renderDashboard(m)
@@ -61,12 +61,24 @@ func renderView(m Model) string {
 
 func renderSplash(m Model) string {
 	return "\n" + styleGreen.Render(banner) + "\n\n" +
-		styleMuted.Render("connecting to "+m.adminURL+" ...") + "\n"
+		styleMuted.Render("press any key to continue  ·  q to quit") + "\n"
+}
+
+func renderDivider(width int) string {
+	w := width
+	if w <= 0 {
+		w = 60
+	}
+	return styleMuted.Render(strings.Repeat("─", w))
 }
 
 func renderDashboard(m Model) string {
 	var b strings.Builder
 	b.WriteString(renderHeader(m))
+	b.WriteString("\n")
+	b.WriteString(renderDivider(m.width))
+	b.WriteString("\n\n")
+	b.WriteString(renderConfigPanel(m))
 	b.WriteString("\n\n")
 
 	backendCol := lipgloss.JoinVertical(lipgloss.Left,
@@ -93,6 +105,8 @@ func renderDashboard(m Model) string {
 	}
 
 	b.WriteString("\n\n")
+	b.WriteString(renderDivider(m.width))
+	b.WriteString("\n")
 	b.WriteString(renderFooter(m))
 	return b.String()
 }
@@ -106,12 +120,20 @@ func renderHeader(m Model) string {
 	if m.status.Config.SessionAffinity {
 		affinity = "session affinity: on"
 	}
-	title := styleTitle.Render("Aegis") + styleMuted.Render("  "+algo+"  ·  "+affinity)
+	uptime := time.Since(m.startedAt).Round(time.Second)
+	title := styleTitle.Render("Aegis") + styleMuted.Render("  "+algo+"  ·  "+affinity+"  ·  up "+uptime.String())
 
 	admin := reachabilityDot("control plane", m.adminReachable, m.adminEverPolled)
 	data := reachabilityDot("data plane", m.dataPlaneReachable, m.dataPlaneEverPolled)
 
 	return title + "\n" + admin + "   " + data
+}
+
+func renderConfigPanel(m Model) string {
+	c := m.status.Config
+	line := fmt.Sprintf("rate limit: %drps/%dburst  ·  circuit breaker: %d failures/%.0fs  ·  timeouts: connect %.0fs · idle %.0fs · read %.0fs",
+		c.RateLimitRPS, c.RateLimitBurst, c.CBThreshold, c.CBTimeoutSecs, c.ConnectTimeoutSecs, c.IdleTimeoutSecs, c.ReadTimeoutSecs)
+	return stylePanel.Render(styleMuted.Render(line))
 }
 
 func reachabilityDot(label string, reachable, everPolled bool) string {
@@ -240,6 +262,16 @@ func renderStatsBlock(m Model, width int) string {
 	return panelStyle(width).Render(strings.Join(lines, "\n"))
 }
 
+const maxEventTextLen = 70
+
+func truncateText(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
+}
+
 func renderEvents(m Model, width int) string {
 	if len(m.events) == 0 {
 		return panelStyle(width).Render(styleMuted.Render("No events yet — waiting for a state change."))
@@ -254,7 +286,7 @@ func renderEvents(m Model, width int) string {
 	lines := make([]string, 0, eventsShown)
 	for i := n - 1; i >= start; i-- {
 		ev := m.events[i]
-		lines = append(lines, styleMuted.Render(ev.Time.Format(time.TimeOnly))+"  "+ev.Text)
+		lines = append(lines, styleMuted.Render(ev.Time.Format(time.TimeOnly))+"  "+truncateText(ev.Text, maxEventTextLen))
 	}
 
 	return panelStyle(width).Render(strings.Join(lines, "\n"))
@@ -270,6 +302,9 @@ func renderActions(width int) string {
 		"[6] restart backend3",
 		"[7] fire TCP burst",
 		"[8] fire UDP burst",
+		"[g] open Grafana",
+		"[m] open Prometheus",
+		"[d] open admin dashboard",
 	}
 	return panelStyle(width).Render(styleMuted.Render(strings.Join(lines, "\n")))
 }
@@ -302,6 +337,9 @@ func renderHelp() string {
 		"4-6   restart backend1/2/3   (docker compose start)",
 		"7     fire a concurrent TCP burst",
 		"8     fire a UDP burst",
+		"g     open Grafana in a browser",
+		"m     open Prometheus in a browser",
+		"d     open the admin dashboard in a browser",
 		"p     pause/resume polling",
 		"?     toggle this help screen",
 		"q     quit",
