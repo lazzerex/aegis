@@ -85,7 +85,7 @@ services:
       - "8081:8081/udp" # UDP Proxy
       - "9100:9100"    # Prometheus metrics
     restart: unless-stopped
-    healthcheck:        #why are we even failing healthchecks sometimes??
+    healthcheck:
       test: ["CMD", "nc", "-n", "-z", "127.0.0.1", "50051"]
       interval: 10s
       timeout: 5s
