@@ -26,9 +26,16 @@ type Backend struct {
 type Status struct {
 	Version string `json:"version"`
 	Config  struct {
-		Backends        int    `json:"backends"`
-		Algorithm       string `json:"algorithm"`
-		SessionAffinity bool   `json:"session_affinity"`
+		Backends           int     `json:"backends"`
+		Algorithm          string  `json:"algorithm"`
+		SessionAffinity    bool    `json:"session_affinity"`
+		RateLimitRPS       int     `json:"rate_limit_rps"`
+		RateLimitBurst     int     `json:"rate_limit_burst"`
+		CBThreshold        int     `json:"cb_threshold"`
+		CBTimeoutSecs      float64 `json:"cb_timeout_secs"`
+		ConnectTimeoutSecs float64 `json:"connect_timeout_secs"`
+		IdleTimeoutSecs    float64 `json:"idle_timeout_secs"`
+		ReadTimeoutSecs    float64 `json:"read_timeout_secs"`
 	} `json:"config"`
 }
 
