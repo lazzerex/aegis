@@ -108,9 +108,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"version": "0.1.0",
 		"config": map[string]interface{}{
-			"backends":         len(s.config.Proxy.Backends),
-			"algorithm":        s.config.Proxy.LoadBalancing.Algorithm,
-			"session_affinity": s.config.Proxy.LoadBalancing.SessionAffinity,
+			"backends":             len(s.config.Proxy.Backends),
+			"algorithm":            s.config.Proxy.LoadBalancing.Algorithm,
+			"session_affinity":     s.config.Proxy.LoadBalancing.SessionAffinity,
+			"rate_limit_rps":       s.config.Proxy.Traffic.RateLimit.RequestsPerSecond,
+			"rate_limit_burst":     s.config.Proxy.Traffic.RateLimit.Burst,
+			"cb_threshold":         s.config.Proxy.CircuitBreaker.ErrorThreshold,
+			"cb_timeout_secs":      s.config.Proxy.CircuitBreaker.Timeout.Seconds(),
+			"connect_timeout_secs": s.config.Proxy.Traffic.Timeout.Connect.Seconds(),
+			"idle_timeout_secs":    s.config.Proxy.Traffic.Timeout.Idle.Seconds(),
+			"read_timeout_secs":    s.config.Proxy.Traffic.Timeout.Read.Seconds(),
 		},
 	}
 
