@@ -164,21 +164,38 @@ func (c *Checker) checkUDPBackend(backend config.Backend) {
 		case <-c.stopChan:
 			return
 		case <-ticker.C:
-			healthy := c.performTCPProbe(backend)
+			healthy := c.performUDPProbe(backend)
 			c.updateHealthState(backend.Address, healthy)
 		}
 	}
 }
 
-func (c *Checker) performTCPProbe(backend config.Backend) bool {
-	conn, err := net.DialTimeout("tcp", backend.Address, backend.HealthCheck.Timeout)
+func (c *Checker) performUDPProbe(backend config.Backend) bool {
+	conn, err := net.DialTimeout("udp", backend.Address, backend.HealthCheck.Timeout)
 	if err != nil {
-		c.logger.Warn("UDP backend TCP probe failed",
+		c.logger.Warn("UDP backend probe dial failed",
 			zap.String("backend", backend.Address),
 			zap.Error(err))
 		return false
 	}
-	conn.Close()
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(backend.HealthCheck.Timeout))
+
+	if _, err := conn.Write([]byte("aegis-health-check")); err != nil {
+		c.logger.Warn("UDP backend probe write failed",
+			zap.String("backend", backend.Address),
+			zap.Error(err))
+		return false
+	}
+
+	buf := make([]byte, 1)
+	if _, err := conn.Read(buf); err != nil {
+		c.logger.Warn("UDP backend probe got no response",
+			zap.String("backend", backend.Address),
+			zap.Error(err))
+		return false
+	}
 	return true
 }
 
