@@ -60,8 +60,11 @@ type Model struct {
 
 	lastActionStatus string
 
-	showHelp bool
-	paused   bool
+	showHelp        bool
+	paused          bool
+	splashDismissed bool
+
+	startedAt time.Time
 
 	width, height int
 	quitting      bool
@@ -76,6 +79,7 @@ func NewModel(adminURL, dataPlaneURL, proxyURL, udpAddr string) Model {
 		client:          &http.Client{Timeout: pollTimeout},
 		prevBackends:    make(map[string]Backend),
 		prevUDPBackends: make(map[string]Backend),
+		startedAt:       time.Now(),
 	}
 }
 
@@ -131,6 +135,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		}
+		if !m.splashDismissed {
+			m.splashDismissed = true
+			return m, nil
+		}
+		switch key {
 		case "esc":
 			if m.showHelp {
 				m.showHelp = false
